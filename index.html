@@ -151,6 +151,8 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
 #cloudBox h3 { margin: 0; font-size: 1rem; }
 #cloudForm, #cloudIn { margin: 0; display: flex; flex-direction: column; gap: 10px; }
 #linkForm { margin: 0; }
+#acctNote { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; border-style: solid; border-color: var(--accent); color: var(--ink); }
+#acctNote span { min-width: 0; flex: 1 1 220px; }
 #cloudCode bdi { font-family: ui-monospace, Menlo, monospace; font-size: 1.05rem; color: var(--ink); letter-spacing: .06em; }
 .srcbar { justify-content: center; gap: 8px; }
 #srcHint { text-align: center; }
@@ -210,6 +212,10 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   </section>
 
   <div id="practice">
+  <div class="note" id="acctNote" hidden>
+    <span id="acctText"></span>
+    <button class="btn small" id="acctBtn" type="button">פתיחת חשבון</button>
+  </div>
   <div class="row srcbar" id="sources"></div>
   <p class="hintline" id="srcHint" hidden></p>
   <div class="sentence" id="sentence" dir="ltr" lang="en"></div>
@@ -455,6 +461,10 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     $("count").textContent = sentences.length ? "קטע " + (idx + 1) + " מתוך " + sentences.length : "";
     $("localBadge").hidden = !isLocal;
     $("whoBtn").hidden = !me; $("whoBtn").textContent = me ? me.name + " ▾" : "";
+    // a name kept only on this device: point to the account, where the readings are kept for good
+    var localOnly = !!(sb && me && !me.cloud);
+    $("acctNote").hidden = !localOnly || listening || !!attempt;
+    if (localOnly) { $("acctText").textContent = "הקריאות של " + me.name + " נשמרות רק במכשיר הזה. עם חשבון הן נשמרות בענן, ואפשר לראות את הדוח מכל מכשיר."; }
     drawSources();
     $("prevBtn").disabled = idx === 0 || listening;
     $("nextBtn").disabled = idx >= sentences.length - 1 || listening;
@@ -1038,6 +1048,13 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
       $("cloudStatus").textContent = ""; showChooser(true); render();
     };
     sb.auth.signOut().then(done, done);
+  });
+
+  $("acctBtn").addEventListener("click", function () {
+    if (listening) { return; }
+    $("whoBtn").click();                 // the same screen as choosing a reader
+    newMode = true; $("cloudStatus").textContent = ""; drawCloud();
+    $("cloudBox").scrollIntoView({ block: "center" });
   });
 
   // ---------- who is reading ----------
