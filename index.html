@@ -343,7 +343,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
 (function () {
   "use strict";
   var LS_LOCAL = "reading-ipad-local", LS_GLOSS = "reading-ipad-show-hebrew", LS_IDX = "reading-ipad-index";
-  var PASSAGE_RATE = 0.7, WORD_RATE = 0.6;
+  var PASSAGE_RATE = 0.7, WORD_RATE = 0.5;     // a single word: half the device voice's normal pace
   var $ = function (id) { return document.getElementById(id); };
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   var hasSynth = !!(window.speechSynthesis && window.SpeechSynthesisUtterance);
