@@ -1097,6 +1097,11 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     $("linkForm").hidden = !mine;
     $("cloudKids").textContent = mine && kids.length ? "מקושרות לחשבון הזה: " + kids.map(function (k) { return k.name; }).join(", ") : "";
   }
+  // Supabase's own mail service sends only a few emails an hour for the whole project.
+  function mailLimited(err) {
+    return !!err && (err.status === 429 || /rate|limit|seconds/i.test(String(err.code || "") + " " + String(err.message || "")));
+  }
+  var LIMIT_TEXT = "נשלחו יותר מדי מיילים בזמן האחרון, ו-Supabase חוסם זמנית משלוח מיילים חדשים. נסו שוב בעוד שעה.";
   // Forgotten password: a reset link by email, which comes back here to choose a new one.
   $("cloudForgot").addEventListener("click", function () {
     var email = $("cloudEmail").value.trim(), st = $("cloudStatus"), b = this;
@@ -1105,7 +1110,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     b.disabled = true; st.textContent = "שולחים…";
     sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }).then(function (r) {
       b.disabled = false;
-      st.textContent = r && r.error ? "לא הצלחתי לשלוח מייל כרגע. נסו שוב בעוד כמה דקות."
+      st.textContent = r && r.error ? (mailLimited(r.error) ? LIMIT_TEXT : "לא הצלחתי לשלוח מייל כרגע. נסו שוב בעוד כמה דקות.")
         : "אם יש חשבון עם האימייל הזה, נשלח אליו מייל עם קישור. פותחים את הקישור, וחוזרים לכאן לבחור סיסמה חדשה.";
     }, function () { b.disabled = false; st.textContent = "לא הצלחתי לשלוח. בדקו את החיבור לאינטרנט."; });
   });
@@ -1141,7 +1146,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     if (newMode) {
       sb.auth.signUp({ email: email, password: pass, options: { data: { display_name: name, is_parent: $("cloudParent").checked }, emailRedirectTo: location.origin + location.pathname } }).then(function (r) {
         $("cloudGo").disabled = false; $("cloudPass").value = "";
-        if (!r || r.error) { st.textContent = "לא הצלחתי לפתוח חשבון. אולי כבר יש חשבון עם האימייל הזה?"; return; }
+        if (!r || r.error) { st.textContent = r && mailLimited(r.error) ? LIMIT_TEXT : "לא הצלחתי לפתוח חשבון. אולי כבר יש חשבון עם האימייל הזה?"; return; }
         if (r.data && r.data.session && r.data.user) { $("cloudName").value = ""; return cloudEnter(r.data.user); }
         newMode = false; drawCloud();
         st.textContent = "החשבון נפתח. נשלח מייל לאישור הכתובת: אחרי שמאשרים בו, חוזרים לכאן ונכנסים.";
