@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>קוראים באנגלית</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600&family=Rubik:wght@400;500;700&display=swap">
+<style>
+/* Layout: one calm column. The passage is the biggest thing on screen, the microphone button sits right under it, everything for the parent is tucked at the bottom. */
+:root {
+  --bg: #f1f6fb; --surface: #ffffff; --ink: #16263a; --muted: #5a6b80; --line: #d3deea;
+  --accent: #2457d6; --accent-ink: #ffffff; --sun: #f5b921;
+  --good: #0f7a56; --good-bg: #dcf4e8; --miss: #bf3327; --miss-bg: #fde4e0;
+  --ui: "Rubik", "Arial Hebrew", Arial, sans-serif;
+  --read: "Lexend", "Verdana", "Trebuchet MS", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1725; --surface: #172338; --ink: #e8eef6; --muted: #9aabc0; --line: #2a3a53;
+    --accent: #86a9ff; --accent-ink: #0b1424; --sun: #ffd15c;
+    --good: #62d6a7; --good-bg: #123a2c; --miss: #ff9186; --miss-bg: #47211d;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--ui); font-size: 16px; line-height: 1.5; }
+.app {
+  max-width: 760px; margin: 0 auto;
+  padding-top: max(20px, env(safe-area-inset-top, 0px)); padding-bottom: max(40px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 18px;
+}
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 1.35rem; font-weight: 700; margin: 0; }
+.count { color: var(--muted); font-variant-numeric: tabular-nums; }
+.badge { display: inline-block; font-size: .8rem; color: var(--muted); border: 1px dashed var(--line); border-radius: 999px; padding: 2px 10px; }
+
+.sentence {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 20px;
+  padding: 26px 18px; min-height: 150px;
+  display: flex; flex-wrap: wrap; align-content: center; justify-content: center; gap: 10px 4px;
+  font-family: var(--read); font-size: clamp(1.4rem, 4.8vw, 2.1rem); font-weight: 500; line-height: 1.3;
+}
+.sentence.live { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+.w {
+  font: inherit; color: inherit; background: transparent; border: 0; border-bottom: 3px solid transparent;
+  border-radius: 10px; padding: 2px 8px; cursor: pointer; min-width: 0; overflow-wrap: anywhere;
+  display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.w.ok { background: var(--good-bg); color: var(--good); }
+.w.miss { background: var(--miss-bg); color: var(--miss); border-bottom-color: var(--miss); }
+.w.say { outline: 3px solid var(--sun); outline-offset: 1px; }
+.w.next { background: color-mix(in srgb, var(--accent) 12%, transparent); border-bottom-color: var(--accent); }
+.w .he {
+  font-family: var(--ui); font-weight: 400; font-size: clamp(.9rem, .5em, 1.15rem); line-height: 1.6;
+  color: var(--muted); min-height: 1.6em; white-space: nowrap;
+}
+.hintrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 18px; color: var(--muted); font-size: .9rem; margin-top: -8px; }
+.toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.toggle input { width: 1.05em; height: 1.05em; accent-color: var(--accent); }
+
+.actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+button { font-family: var(--ui); touch-action: manipulation; }
+.btn {
+  font-size: 1rem; font-weight: 500; border-radius: 999px; padding: 12px 20px; cursor: pointer;
+  border: 1.5px solid var(--line); background: var(--surface); color: var(--ink);
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-size: 1.15rem; font-weight: 700; padding: 14px 28px; }
+.btn.primary.live { background: var(--miss); border-color: var(--miss); color: var(--surface); animation: pulse 1.4s ease-in-out infinite; }
+.btn svg { width: 1.2em; height: 1.2em; flex: none; }
+:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 9px color-mix(in srgb, var(--miss) 22%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .btn.primary.live { animation: none; } }
+
+.feedback { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; text-align: center; }
+.feedback .big { font-size: 1.3rem; font-weight: 700; }
+.stars { font-size: 1.7rem; letter-spacing: 4px; color: var(--line); }
+.stars b { color: var(--sun); font-weight: 400; }
+.heard { font-family: var(--read); color: var(--muted); font-size: .95rem; overflow-wrap: anywhere; }
+.note { background: var(--surface); border: 1px dashed var(--line); border-radius: 14px; padding: 12px 16px; color: var(--muted); font-size: .95rem; }
+
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dots { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; flex: 1; min-width: 0; }
+.dot { width: 14px; height: 14px; padding: 0; border-radius: 50%; border: 2px solid var(--line); background: var(--surface); cursor: pointer; }
+.dot.cur { border-color: var(--accent); }
+.dot.s1, .dot.s2 { background: var(--sun); border-color: var(--sun); opacity: .55; }
+.dot.s3 { background: var(--good); border-color: var(--good); }
+.dot.cur.s1, .dot.cur.s2, .dot.cur.s3 { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+details { border-top: 1px solid var(--line); padding-top: 14px; }
+summary { cursor: pointer; font-weight: 500; color: var(--muted); }
+.editor { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.editor p { margin: 0; color: var(--muted); font-size: .92rem; }
+textarea {
+  width: 100%; min-height: 190px; resize: vertical; font-family: var(--read); font-size: 1rem; line-height: 1.6;
+  padding: 12px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink);
+}
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+#saveStatus { color: var(--muted); font-size: .92rem; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>קוראים באנגלית</h1>
+    <span><span class="badge" id="localBadge" hidden>קטעים שהוקלדו כאן</span> <span class="count" id="count"></span></span>
+  </header>
+
+  <div class="sentence" id="sentence" dir="ltr" lang="en"></div>
+  <div class="hintrow">
+    <span id="wordHint">לחיצה על מילה משמיעה אותה</span>
+    <label class="toggle" id="glossWrap" hidden><input type="checkbox" id="glossToggle" checked> הגייה בעברית</label>
+  </div>
+
+  <div class="actions">
+    <button class="btn" id="listenBtn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+      <span id="listenLabel">השמיעי לי</span>
+    </button>
+    <button class="btn" id="slowBtn" type="button">מילה מילה</button>
+    <button class="btn primary" id="micBtn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      <span id="micLabel">התחילי לקרוא</span>
+    </button>
+    <button class="btn" id="finishBtn" type="button" hidden>סיימתי</button>
+  </div>
+
+  <div class="note" id="envNote" hidden></div>
+  <div class="note" id="micNote" hidden></div>
+
+  <div class="feedback" id="feedback" hidden>
+    <div class="stars" id="stars" aria-hidden="true"></div>
+    <div class="big" id="fbTitle"></div>
+    <div id="fbText"></div>
+    <div class="heard" id="heard" dir="ltr" lang="en"></div>
+  </div>
+
+  <div class="nav">
+    <button class="btn" id="prevBtn" type="button">הקודם</button>
+    <div class="dots" id="dots"></div>
+    <button class="btn" id="nextBtn" type="button">הבא</button>
+  </div>
+
+  <details id="parent">
+    <summary>להורים: קטעים אחרים</summary>
+    <div class="editor">
+      <p>אפשר להקליד או להדביק כאן קטעים אחרים, קטע בכל שורה. הם נשמרים רק במכשיר הזה, ובלי הגייה בעברית.</p>
+      <textarea id="editor" dir="ltr" lang="en" spellcheck="false"></textarea>
+      <div class="row">
+        <button class="btn" id="saveBtn" type="button">שמירה</button>
+        <button class="btn" id="resetBtn" type="button" hidden>חזרה לקטעים מהמורה</button>
+        <span id="saveStatus" role="status"></span>
+      </div>
+    </div>
+  </details>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var LS_LOCAL = "reading-ipad-local", LS_GLOSS = "reading-ipad-show-hebrew", LS_IDX = "reading-ipad-index";
+  var PASSAGE_RATE = 0.7, WORD_RATE = 0.6;
+  var $ = function (id) { return document.getElementById(id); };
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var hasSynth = !!(window.speechSynthesis && window.SpeechSynthesisUtterance);
+
+  // <core>
+  // Words that sound the same count as the same word: speech-to-text cannot tell them apart.
+  var GROUPS = [
+    ["to","too","two","2"],["there","their","theyre"],["for","four","4"],["see","sea"],["no","know"],
+    ["right","write"],["here","hear"],["by","buy","bye"],["sun","son"],["one","won","1"],["your","youre"],
+    ["ate","eight","8"],["be","bee"],["i","eye"],["new","knew"],["red","read"],["meet","meat"],["hi","high"],
+    ["our","hour"],["wear","where"],["ok","okay"],["mum","mom"],["three","3"],["five","5"],["six","6"],
+    ["seven","7"],["nine","9"],["ten","10"],["zero","0"],["eleven","11"],["twelve","12"],["whole","hole"],
+    ["week","weak"],["blue","blew"],["flower","flour"],["tail","tale"],["wood","would"],["grey","gray"],
+    ["colour","color"],["favourite","favorite"],["cannot","cant"]
+  ];
+  var CANON = {};
+  GROUPS.forEach(function (g) { g.forEach(function (w) { CANON[w] = g[0]; }); });
+
+  function norm(word) {
+    var w = word.toLowerCase().replace(/[’'`]/g, "").replace(/[^a-z0-9]/g, "");
+    return CANON[w] || w;
+  }
+  function tokens(text) {
+    return text.split(/\s+/).filter(Boolean).map(function (raw) { return { raw: raw, key: norm(raw) }; });
+  }
+  // Reading in order. Only the word at the cursor can be matched. A heard word that
+  // appears later in the text never moves the cursor forward. The one exception:
+  // when the words that FOLLOW the cursor are then read correctly, the cursor word
+  // is marked as missed and reading carries on.
+  function walk(base, s, t) {
+    var c = base.cursor, missed = {}, j = 0, n = t.length, m = s.length, k, need, sub;
+    for (k in base.missed) { missed[k] = true; }
+    while (j < m && c < n) {
+      if (s[j] === t[c]) { c++; j++; continue; }
+      need = Math.min(2, n - 1 - c);
+      if (need >= 1) {
+        sub = true;
+        for (k = 1; k <= need; k++) { if (s[j + k] !== t[c + k]) { sub = false; } }
+        if (sub) { missed[c] = true; c++; j++; continue; }       // said a different word instead
+      }
+      if (c + 2 < n && s[j] === t[c + 1] && s[j + 1] === t[c + 2]) { missed[c] = true; c++; continue; } // left the word out
+      j++;                                                       // noise or a repeat: ignore
+    }
+    return { cursor: c, missed: missed };
+  }
+  // </core>
+
+  // ---------- state ----------
+  var teacher = { sentences: [], glosses: [], updatedAt: "" };
+  var sentences = [], glosses = [], isLocal = false;
+  var idx = 0, stars = {}, toks = [];
+  var attempt = null;                 // { text, helped } while a reading is under way
+  var rec = null, sesFinal = "", sesInterim = "", gotText = false, lastErr = "", idleRestarts = 0;
+  var listening = false, pendingWord = null, verdict = null, wantFinish = false, showHe = true;
+  var talking = false, sayingTok = -1, synthRun = 0;
+
+  function hasGloss(g) { return Array.isArray(g) && g.some(Boolean); }
+  function use(list, gl, local) {
+    sentences = list; glosses = gl || []; isLocal = local; stars = {};
+    if (idx >= sentences.length) { idx = 0; }
+    attempt = null; verdict = null; pendingWord = null; render();
+  }
+  function realKeys() { return toks.filter(function (t) { return t.key; }).map(function (t) { return t.key; }); }
+  function progress() {
+    var said = tokens(attempt.text + " " + sesFinal + " " + sesInterim).map(function (t) { return t.key; }).filter(Boolean);
+    return walk({ cursor: 0, missed: {} }, said, realKeys());
+  }
+
+  // ---------- rendering ----------
+  function render() {
+    toks = tokens(sentences[idx] || "");
+    $("count").textContent = sentences.length ? "קטע " + (idx + 1) + " מתוך " + sentences.length : "";
+    $("localBadge").hidden = !isLocal;
+    $("prevBtn").disabled = idx === 0 || listening;
+    $("nextBtn").disabled = idx >= sentences.length - 1 || listening;
+
+    var g = glosses[idx], useHe = showHe && hasGloss(g);
+    $("glossWrap").hidden = !glosses.some(hasGloss);
+    var now = attempt ? progress() : null, k = 0;
+    var box = $("sentence"); box.textContent = "";
+    box.classList.toggle("live", listening);
+    toks.forEach(function (t, ti) {
+      var b = document.createElement("button"), mine = -1;
+      b.type = "button"; b.className = "w" + (ti === sayingTok ? " say" : "");
+      var en = document.createElement("span"); en.textContent = t.raw; b.appendChild(en);
+      if (useHe) {
+        var he = document.createElement("span"); he.className = "he"; he.dir = "rtl"; he.lang = "he";
+        he.textContent = (t.key && g[ti]) || " "; b.appendChild(he);
+      }
+      if (t.key) {
+        mine = k++;
+        if (now) {
+          if (mine < now.cursor) { b.classList.add(now.missed[mine] ? "miss" : "ok"); }
+          else if (mine === now.cursor) { b.classList.add("next"); }
+        } else if (verdict) { b.classList.add(verdict.miss[mine] ? "miss" : "ok"); }
+      }
+      b.addEventListener("click", function () {
+        wordTap(mine, t.raw.replace(/[^A-Za-z0-9'’-]/g, "") || t.raw);
+      });
+      box.appendChild(b);
+    });
+
+    var dots = $("dots"); dots.textContent = "";
+    sentences.forEach(function (_, i) {
+      var d = document.createElement("button");
+      d.type = "button"; d.className = "dot" + (i === idx ? " cur" : "") + (stars[i] ? " s" + stars[i] : "");
+      d.setAttribute("aria-label", "קטע " + (i + 1));
+      d.disabled = listening;
+      d.addEventListener("click", function () { go(i); });
+      dots.appendChild(d);
+    });
+
+    $("micBtn").hidden = !SR;
+    $("micBtn").classList.toggle("live", listening);
+    $("micLabel").textContent = listening ? "סיימתי" : attempt ? "להמשיך לקרוא" : verdict ? "לנסות שוב" : "התחילי לקרוא";
+    $("finishBtn").hidden = !(attempt && !listening);
+    $("listenBtn").hidden = !hasSynth; $("slowBtn").hidden = !hasSynth; $("wordHint").hidden = !hasSynth;
+    $("listenBtn").disabled = listening;
+    $("listenLabel").textContent = talking ? "עצירה" : "השמיעי לי";
+    $("slowBtn").disabled = listening || talking;
+
+    var fb = $("feedback");
+    fb.hidden = !verdict;
+    if (verdict) {
+      $("stars").innerHTML = "<b>" + "★".repeat(verdict.stars) + "</b>" + "★".repeat(3 - verdict.stars);
+      $("fbTitle").textContent = verdict.title;
+      $("fbText").textContent = verdict.text;
+      $("heard").textContent = verdict.heard ? "שמעתי: " + verdict.heard : "";
+    }
+  }
+  function go(i) {
+    if (listening || i < 0 || i >= sentences.length) { return; }
+    stopSynth(); dropRec();
+    idx = i; attempt = null; verdict = null; pendingWord = null; wantFinish = false; sayingTok = -1; showNote("");
+    try { localStorage.setItem(LS_IDX, String(idx)); } catch (e) { /* storage blocked */ }
+    render();
+  }
+  function showNote(text) { var n = $("micNote"); n.textContent = text; n.hidden = !text; }
+
+  function conclude() {
+    var r = progress(), n = realKeys().length || 1, miss = {}, bad = 0, i;
+    var heard = (attempt.text + " " + sesFinal + " " + sesInterim).replace(/\s+/g, " ").trim();
+    var helped = Object.keys(attempt.helped).length;
+    attempt = null; pendingWord = null; wantFinish = false; sesFinal = ""; sesInterim = "";
+    if (!heard && r.cursor === 0) {
+      verdict = null; render();
+      showNote("לא שמעתי כלום. כדאי להתקרב למיקרופון ולנסות שוב.");
+      return;
+    }
+    for (i = 0; i < n; i++) { if (r.missed[i] || i >= r.cursor) { miss[i] = true; bad++; } }
+    var good = n - bad, ratio = good / n, s = ratio === 1 ? 3 : ratio >= 0.75 ? 2 : ratio >= 0.4 ? 1 : 0;
+    verdict = {
+      stars: s, heard: heard, miss: miss,
+      title: s === 3 ? "מושלם!" : s === 2 ? "כמעט!" : s === 1 ? "התחלה טובה" : "בואי ננסה שוב",
+      text: (s === 3 ? "קראת את כל הקטע נכון ולפי הסדר." :
+        good + " מתוך " + n + " מילים נכונות. לחצי על המילים האדומות כדי לשמוע אותן, ונסי שוב.") +
+        (helped ? " נעזרת בהשמעה של " + (helped === 1 ? "מילה אחת." : helped + " מילים.") : "")
+    };
+    if (!stars[idx] || s > stars[idx]) { stars[idx] = s; }
+    render();
+  }
+
+  // ---------- listening (the browser's own speech recognition) ----------
+  function dropRec() {
+    var r = rec; rec = null; listening = false;
+    if (r) { try { r.abort(); } catch (e) { /* already stopped */ } }
+  }
+  function startListening() {
+    if (!SR || rec) { return; }
+    stopSynth();
+    sesFinal = ""; sesInterim = ""; gotText = false; lastErr = "";
+    var r = new SR(), started = false;
+    r.lang = "en-US"; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+    rec = r;
+    r.onstart = function () { if (r !== rec) { return; } started = true; listening = true; showNote(""); render(); };
+    r.onresult = function (e) {
+      if (r !== rec || !attempt) { return; }
+      var f = "", it = "";
+      for (var i = 0; i < e.results.length; i++) {
+        var x = e.results[i];
+        if (x.isFinal) { f += x[0].transcript + " "; } else { it += x[0].transcript + " "; }
+      }
+      if (f + it !== sesFinal + sesInterim) { gotText = true; }
+      sesFinal = f; sesInterim = it;
+      live();
+    };
+    r.onerror = function (e) { if (r === rec) { lastErr = (e && e.error) || "error"; } };
+    r.onend = function () { if (r === rec) { rec = null; ended(); } };
+    try { r.start(); } catch (err) { rec = null; lastErr = "start-failed"; ended(); return; }
+    setTimeout(function () {          // a start that never reports back
+      if (r === rec && !started) { lastErr = "start-timeout"; dropRec(); ended(); }
+    }, 5000);
+  }
+  // The recognition session is over: the browser ends it by itself after a silence.
+  // Only "סיימתי" or reading every word ends the try; otherwise keep what was read and listen again.
+  function ended() {
+    if (!attempt) { listening = false; render(); return; }
+    attempt.text += " " + sesFinal + " " + sesInterim; sesFinal = ""; sesInterim = "";
+    if (wantFinish || progress().cursor >= realKeys().length) { listening = false; conclude(); return; }
+    if (lastErr === "not-allowed" || lastErr === "service-not-allowed") {
+      listening = false; render();
+      showNote("אין גישה למיקרופון. צריך לאשר את המיקרופון לאתר הזה, ולוודא שבהגדרות המכשיר, תחת כללי ואז מקלדת, האפשרות \"הכתבה\" מופעלת.");
+      return;
+    }
+    if (pendingWord) {
+      var w = pendingWord; pendingWord = null; listening = false; render();
+      speak(w, WORD_RATE).then(function () { if (attempt && !listening && !rec) { idleRestarts = 0; startListening(); } });
+      return;
+    }
+    idleRestarts = gotText ? 0 : idleRestarts + 1;
+    if (idleRestarts <= 3 && lastErr !== "start-failed" && lastErr !== "start-timeout") { startListening(); return; }
+    listening = false; render();
+    showNote("ההקשבה נעצרה" + (lastErr ? " (" + lastErr + ")" : "") + ". לחצי על \"להמשיך לקרוא\" כדי להמשיך מאותה מילה.");
+  }
+  function finishListening() {
+    var r = rec;
+    wantFinish = true; pendingWord = null;
+    if (!r) { listening = false; if (attempt) { conclude(); } return; }
+    try { r.stop(); } catch (e) { /* already stopping */ }
+    setTimeout(function () { if (r === rec) { dropRec(); ended(); } }, 2500);   // a stop that never reports back
+  }
+  function live() {
+    render();
+    var n = realKeys().length;
+    if (!n || !attempt || wantFinish || progress().cursor < n) { return; }
+    if (!listening) { conclude(); return; }
+    finishListening();
+  }
+  $("micBtn").addEventListener("click", function () {
+    if (!SR) { return; }
+    if (listening) { finishListening(); return; }
+    showNote("");
+    if (!attempt) { verdict = null; wantFinish = false; attempt = { text: "", helped: {} }; }
+    idleRestarts = 0;
+    startListening();
+    render();
+  });
+  $("finishBtn").addEventListener("click", function () { if (attempt && !listening) { dropRec(); conclude(); } });
+
+  // A word she is stuck on: stop listening, play the word, then listen again.
+  function wordTap(k, text) {
+    if (listening && attempt) {
+      if (k >= 0) { attempt.helped[k] = true; }
+      pendingWord = text;
+      var r = rec; rec = null;
+      if (r) { try { r.abort(); } catch (e) { /* already stopped */ } }
+      ended();
+      return;
+    }
+    speak(text, WORD_RATE);
+  }
+
+  // ---------- speaking (the device's own voice) ----------
+  function usVoice() {
+    try {
+      var v = window.speechSynthesis.getVoices().filter(function (x) { return /^en[-_]US/i.test(x.lang); });
+      return v.filter(function (x) { return /samantha/i.test(x.name); })[0] || v.filter(function (x) { return x.default; })[0] || v[0] || null;
+    } catch (e) { return null; }
+  }
+  function synthSay(text, rate) {
+    return new Promise(function (done) {
+      try {
+        var u = new SpeechSynthesisUtterance(text), v = usVoice();
+        u.lang = "en-US"; if (v) { u.voice = v; }
+        u.rate = rate; u.onend = done; u.onerror = done;
+        setTimeout(done, 2500 + text.length * 220);
+        window.speechSynthesis.speak(u);
+      } catch (err) { done(); }
+    });
+  }
+  function stopSynth() {
+    synthRun++;
+    if (hasSynth) { try { window.speechSynthesis.cancel(); } catch (e) { /* nothing playing */ } }
+    if (talking) { talking = false; sayingTok = -1; render(); }
+  }
+  function speak(text, rate) {
+    if (!text || !hasSynth) { return Promise.resolve(); }
+    stopSynth();
+    var run = synthRun;
+    talking = true; render();
+    return synthSay(text, rate).then(function () { if (run === synthRun) { talking = false; render(); } });
+  }
+  $("listenBtn").addEventListener("click", function () {
+    if (listening) { return; }
+    if (talking) { stopSynth(); return; }
+    speak(sentences[idx], PASSAGE_RATE);
+  });
+  // One word at a time with a pause between words, marking the word being said.
+  $("slowBtn").addEventListener("click", function () {
+    if (listening || talking || !hasSynth) { return; }
+    var words = [];
+    toks.forEach(function (t, ti) {
+      var w = t.raw.replace(/[^A-Za-z0-9'’-]/g, "");
+      if (t.key && w) { words.push({ text: w, ti: ti }); }
+    });
+    if (!words.length) { return; }
+    stopSynth();
+    var run = synthRun, i = 0;
+    talking = true;
+    (function next() {
+      if (run !== synthRun) { return; }
+      if (i >= words.length) { talking = false; sayingTok = -1; render(); return; }
+      var w = words[i++]; sayingTok = w.ti; render();
+      synthSay(w.text, WORD_RATE).then(function () { setTimeout(next, 350); });
+    })();
+  });
+
+  $("prevBtn").addEventListener("click", function () { go(idx - 1); });
+  $("nextBtn").addEventListener("click", function () { go(idx + 1); });
+  $("glossToggle").addEventListener("change", function () {
+    showHe = this.checked;
+    try { localStorage.setItem(LS_GLOSS, showHe ? "1" : "0"); } catch (e) { /* storage blocked */ }
+    render();
+  });
+
+  // ---------- parent: other passages, kept on this device ----------
+  function parseEditor(text) {
+    return text.split(/\r?\n/)
+      .map(function (l) { return l.replace(/^\s*(\d+[.)]|[-*•])\s*/, "").trim().slice(0, 300); })
+      .filter(function (l) { return /[A-Za-z]/.test(l); })
+      .slice(0, 100);
+  }
+  $("parent").addEventListener("toggle", function () {
+    if ($("parent").open) { $("editor").value = isLocal ? sentences.join("\n") : ""; $("saveStatus").textContent = ""; }
+    $("resetBtn").hidden = !isLocal;
+  });
+  $("saveBtn").addEventListener("click", function () {
+    var list = parseEditor($("editor").value);
+    if (!list.length) { $("saveStatus").textContent = "לא מצאתי טקסט באנגלית."; return; }
+    if (listening) { return; }
+    try { localStorage.setItem(LS_LOCAL, JSON.stringify({ sentences: list, savedAt: new Date().toISOString() })); }
+    catch (e) { $("saveStatus").textContent = "לא הצלחתי לשמור במכשיר הזה."; return; }
+    idx = 0; use(list, [], true);
+    $("resetBtn").hidden = false;
+    $("saveStatus").textContent = "נשמרו " + list.length + " קטעים במכשיר הזה.";
+  });
+  $("resetBtn").addEventListener("click", function () {
+    if (listening) { return; }
+    try { localStorage.removeItem(LS_LOCAL); } catch (e) { /* storage blocked */ }
+    idx = 0; use(teacher.sentences, teacher.glosses, false);
+    $("editor").value = ""; $("resetBtn").hidden = true;
+    $("saveStatus").textContent = "חזרנו לקטעים מהמורה.";
+  });
+
+  // ---------- start ----------
+  function choose() {
+    var local = null;
+    try { local = JSON.parse(localStorage.getItem(LS_LOCAL) || "null"); } catch (e) { /* no local set */ }
+    var ok = local && Array.isArray(local.sentences) && local.sentences.length;
+    // passages typed on this device win until the teacher's set is updated after them
+    if (ok && (!teacher.updatedAt || String(local.savedAt || "") > teacher.updatedAt)) { use(local.sentences.map(String), [], true); }
+    else { use(teacher.sentences, teacher.glosses, false); }
+  }
+  try {
+    showHe = localStorage.getItem(LS_GLOSS) !== "0"; $("glossToggle").checked = showHe;
+    var at = parseInt(localStorage.getItem(LS_IDX), 10); if (at > 0) { idx = at; }
+  } catch (e) { /* storage blocked */ }
+
+  if (!SR) {
+    $("envNote").textContent = "הדפדפן הזה לא יודע להקשיב לקריאה. באייפד ובאייפון צריך לפתוח את הדף ב-Safari. אפשר עדיין להשמיע את הקטעים.";
+    $("envNote").hidden = false;
+  } else if (window.navigator.standalone) {
+    $("envNote").textContent = "כשהדף נפתח מסמל במסך הבית, ההקשבה לא תמיד עובדת. אם הכפתור לא מגיב, פתחו את הדף ב-Safari.";
+    $("envNote").hidden = false;
+  }
+  if (hasSynth) { try { window.speechSynthesis.getVoices(); } catch (e) { /* voices load lazily */ } }
+  render();
+
+  fetch("data.json", { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+    if (d && Array.isArray(d.sentences) && d.sentences.length) {
+      teacher = {
+        sentences: d.sentences.map(String),
+        glosses: Array.isArray(d.glosses) ? d.glosses.map(function (g) { return Array.isArray(g) ? g.map(String) : null; }) : [],
+        updatedAt: String(d.updatedAt || "")
+      };
+    }
+    choose();
+  }, function () {
+    choose();
+    if (!sentences.length) { showNote("לא הצלחתי לטעון את הקטעים. בדקו את החיבור לאינטרנט ורעננו את הדף."); }
+  });
+})();
+</script>
+</body>
+</html>
