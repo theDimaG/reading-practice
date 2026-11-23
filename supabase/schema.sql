@@ -8,7 +8,13 @@
 --   reading_tries   one row per reading try
 -- A reader sees only her own tries. A linked parent can read his
 -- children's tries. Nobody can edit or delete a try from the page.
+--
+-- Every grant the page needs is written out below, so this works
+-- whether or not the project grants API access to new tables
+-- automatically (Supabase recommends turning that off).
 -- ============================================================
+
+GRANT USAGE ON SCHEMA public TO authenticated;
 
 -- ---------- profiles ----------
 CREATE TABLE IF NOT EXISTS public.profiles (
@@ -70,6 +76,7 @@ CREATE POLICY "Either side can remove a link" ON public.parent_links
 
 REVOKE ALL ON public.parent_links FROM anon;
 REVOKE INSERT, UPDATE ON public.parent_links FROM authenticated;   -- links are made only through add_child_by_code
+GRANT SELECT, DELETE ON public.parent_links TO authenticated;
 
 -- Link a child by the code shown on her own screen. Returns her name, or NULL when the code is unknown.
 CREATE OR REPLACE FUNCTION public.add_child_by_code(p_code TEXT)
@@ -126,6 +133,7 @@ CREATE POLICY "Readers view own tries" ON public.reading_tries
 
 REVOKE ALL ON public.reading_tries FROM anon;
 REVOKE UPDATE, DELETE ON public.reading_tries FROM authenticated;   -- a try is a log entry
+GRANT SELECT, INSERT ON public.reading_tries TO authenticated;
 
 -- A linked child's tries, for her parent
 CREATE OR REPLACE FUNCTION public.child_reading_tries(p_child UUID)
