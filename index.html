@@ -138,6 +138,15 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
 .danger { color: var(--miss); border-color: color-mix(in srgb, var(--miss) 45%, var(--line)); }
 #importBox { display: flex; flex-direction: column; gap: 10px; border-style: solid; border-color: var(--accent); }
 #importBox .en { margin: 0; font-family: var(--read); color: var(--ink); overflow-wrap: anywhere; }
+.w.close { background: color-mix(in srgb, var(--sun) 28%, transparent); border-bottom-color: var(--sun); }
+.w .tr { font-family: var(--ui); font-weight: 500; font-size: clamp(.85rem, .46em, 1.05rem); line-height: 1.5; color: var(--accent); min-height: 1.5em; white-space: nowrap; }
+.fulltr { margin: -6px 0 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; font-size: 1.08rem; line-height: 1.7; }
+#practiceRow { display: flex; flex-direction: column; gap: 8px; align-items: center; margin-top: 6px; }
+#practiceRow .chips { justify-content: center; }
+.chip.on { border-color: var(--accent); color: var(--accent); }
+.drillword { font-family: var(--read); font-size: 2.4rem; font-weight: 600; }
+#drillSub { font-size: 1.15rem; }
+#drillResult { font-weight: 500; min-height: 1.5em; }
 .srcbar { justify-content: center; gap: 8px; }
 #srcHint { text-align: center; }
 </style>
@@ -173,6 +182,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   <div class="row srcbar" id="sources"></div>
   <p class="hintline" id="srcHint" hidden></p>
   <div class="sentence" id="sentence" dir="ltr" lang="en"></div>
+  <p class="fulltr" id="fullTr" dir="rtl" lang="he" hidden></p>
   <div class="hintrow">
     <span id="wordHint">לחיצה על מילה משמיעה אותה</span>
     <label class="toggle" id="glossWrap" hidden><input type="checkbox" id="glossToggle" checked> הגייה בעברית</label>
@@ -189,6 +199,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
       <span id="micLabel">התחילי לקרוא</span>
     </button>
     <button class="btn" id="finishBtn" type="button" hidden>סיימתי</button>
+    <button class="btn" id="skipBtn" type="button" hidden>לדלג על המילה</button>
   </div>
 
   <div class="note" id="envNote" hidden></div>
@@ -199,6 +210,22 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     <div class="big" id="fbTitle"></div>
     <div id="fbText"></div>
     <div class="heard" id="heard" dir="ltr" lang="en"></div>
+    <div id="practiceRow" hidden>
+      <div class="hintline">מילים לתרגול. לחיצה על מילה פותחת תרגול שלה:</div>
+      <div class="chips" id="practiceChips" dir="ltr"></div>
+    </div>
+  </div>
+
+  <div class="feedback" id="drill" hidden>
+    <div class="drillword" id="drillWord" dir="ltr" lang="en"></div>
+    <div id="drillSub"></div>
+    <div class="hintline" id="drillTip"></div>
+    <div class="actions">
+      <button class="btn" id="drillHear" type="button">השמיעי לאט</button>
+      <button class="btn primary" id="drillSay" type="button">נסי לומר</button>
+      <button class="btn" id="drillClose" type="button">סגירה</button>
+    </div>
+    <div id="drillResult" role="status"></div>
   </div>
 
   <div class="nav">
@@ -257,15 +284,46 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   function tokens(text) {
     return text.split(/\s+/).filter(Boolean).map(function (raw) { return { raw: raw, key: norm(raw) }; });
   }
+  // A heard word that is nearly the target counts as read but is marked "close":
+  // one letter apart for words of four letters or more, or a known mishearing of a th word.
+  var CLOSE = {
+    "with": ["wit","wits","wiz","whiz","wis","wif","wid","width"], "this": ["dis","diss","these"], "that": ["dat","vat"],
+    "they": ["day","dey"], "them": ["dem"], "then": ["den","than"], "than": ["dan","then"], "there": ["dare","dere"],
+    "three": ["tree","free"], "think": ["sink","tink","thing"], "thing": ["sing","ting","think"], "thank": ["tank","sank"],
+    "thanks": ["tanks"], "thought": ["taught","sought","tot"], "mother": ["mudder","mutter"], "brother": ["brudder","bruder"],
+    "father": ["fodder","farther"], "other": ["udder","utter"], "month": ["mont","months","mons"], "math": ["mat","mass"],
+    "north": ["nors","norse"], "mouth": ["mouse","mout"], "both": ["boat","bot"], "teeth": ["teat","tees"], "the": ["de","da"]
+  };
+  function lev1(a, b) {
+    var la = a.length, lb = b.length, i = 0, j = 0, edits = 0;
+    if (Math.abs(la - lb) > 1) { return false; }
+    while (i < la && j < lb) {
+      if (a[i] === b[j]) { i++; j++; continue; }
+      if (++edits > 1) { return false; }
+      if (la > lb) { i++; } else if (lb > la) { j++; } else { i++; j++; }
+    }
+    return edits + (la - i) + (lb - j) <= 1;
+  }
+  function near(sp, tg) {
+    if (!sp || !tg || sp === tg) { return false; }
+    var c = CLOSE[tg];
+    if (c && c.indexOf(sp) >= 0) { return true; }
+    return tg.length >= 4 && sp.length >= 3 && !/\d/.test(tg) && lev1(sp, tg);
+  }
   // Reading in order. Only the word at the cursor can be matched. A heard word that
-  // appears later in the text never moves the cursor forward. The one exception:
-  // when the words that FOLLOW the cursor are then read correctly, the cursor word
-  // is marked as missed and reading carries on.
-  function walk(base, s, t) {
-    var c = base.cursor, missed = {}, j = 0, n = t.length, m = s.length, k, need, sub;
+  // appears later in the text never moves the cursor forward. Two exceptions: when the
+  // words that FOLLOW the cursor are then read correctly, the cursor word is marked as
+  // missed and reading carries on; and a word she chose to skip (skips[index] = how many
+  // words had been heard by then) is marked as missed at once.
+  function walk(base, s, t, skips) {
+    var c = base.cursor, missed = {}, close = {}, j = 0, n = t.length, m = s.length, k, need, sub;
     for (k in base.missed) { missed[k] = true; }
-    while (j < m && c < n) {
+    skips = skips || {};
+    while (c < n) {
+      if (skips[c] != null) { missed[c] = true; j = Math.max(j, skips[c]); c++; continue; }
+      if (j >= m) { break; }
       if (s[j] === t[c]) { c++; j++; continue; }
+      if (near(s[j], t[c]) && s[j] !== t[c + 1]) { close[c] = true; c++; j++; continue; }   // nearly right
       need = Math.min(2, n - 1 - c);
       if (need >= 1) {
         sub = true;
@@ -275,7 +333,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
       if (c + 2 < n && s[j] === t[c + 1] && s[j + 1] === t[c + 2]) { missed[c] = true; c++; continue; } // left the word out
       j++;                                                       // noise or a repeat: ignore
     }
-    return { cursor: c, missed: missed };
+    return { cursor: c, missed: missed, close: close };
   }
   // </core>
 
@@ -287,6 +345,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   var rec = null, sesFinal = "", sesInterim = "", gotText = false, lastErr = "", idleRestarts = 0;
   var listening = false, pendingWord = null, verdict = null, wantFinish = false, showHe = true;
   var talking = false, sayingTok = -1, synthRun = 0;
+  var trBy = {}, drill = null, drillBusy = false;
   // Who is reading, and what each girl has read. Kept on this device only: nothing here is ever sent anywhere.
   var LS_PROF = "reading-ipad-profiles", LS_CUR = "reading-ipad-current", LS_LOG = "reading-ipad-log-";
   var profiles = [], me = null, log = [], listenT0 = 0;
@@ -325,6 +384,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     log.push({
       t: Date.now(), s: (sentences[idx] || "").slice(0, 300), n: n,
       good: r.cursor - Object.keys(r.missed).length, miss: wordsAt(r.missed),
+      close: wordsAt(r.close || {}), skip: wordsAt(a.skips || {}),
       stuck: done || !real[r.cursor] ? "" : clean(real[r.cursor].raw), help: wordsAt(a.helped),
       ms: Math.round(a.ms || 0), st: st, done: done
     });
@@ -352,7 +412,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   function realKeys() { return toks.filter(function (t) { return t.key; }).map(function (t) { return t.key; }); }
   function progress() {
     var said = tokens(attempt.text + " " + sesFinal + " " + sesInterim).map(function (t) { return t.key; }).filter(Boolean);
-    return walk({ cursor: 0, missed: {} }, said, realKeys());
+    return walk({ cursor: 0, missed: {} }, said, realKeys(), attempt.skips);
   }
 
   // ---------- rendering ----------
@@ -369,10 +429,16 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     $("glossWrap").hidden = !glosses.some(hasGloss);
     var now = attempt ? progress() : null, k = 0;
     var box = $("sentence"); box.textContent = "";
+    // once the passage has been read: the meaning above each word, and the whole translation under the passage
+    var cur = sentences[idx] || "", trOn = !!verdict && toks.some(function (t, ti) { return t.key && meaningOf(cur, ti, t.raw); });
     box.classList.toggle("live", listening);
     toks.forEach(function (t, ti) {
       var b = document.createElement("button"), mine = -1;
       b.type = "button"; b.className = "w" + (ti === sayingTok ? " say" : "");
+      if (trOn) {
+        var tr = document.createElement("span"); tr.className = "tr"; tr.dir = "rtl"; tr.lang = "he";
+        tr.textContent = (t.key && meaningOf(cur, ti, t.raw)) || " "; b.appendChild(tr);
+      }
       var en = document.createElement("span"); en.textContent = t.raw; b.appendChild(en);
       if (useHe) {
         var he = document.createElement("span"); he.className = "he"; he.dir = "rtl"; he.lang = "he";
@@ -381,15 +447,18 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
       if (t.key) {
         mine = k++;
         if (now) {
-          if (mine < now.cursor) { b.classList.add(now.missed[mine] ? "miss" : "ok"); }
+          if (mine < now.cursor) { b.classList.add(now.missed[mine] ? "miss" : now.close[mine] ? "close" : "ok"); }
           else if (mine === now.cursor) { b.classList.add("next"); }
-        } else if (verdict) { b.classList.add(verdict.miss[mine] ? "miss" : "ok"); }
+        } else if (verdict) { b.classList.add(verdict.miss[mine] ? "miss" : verdict.close[mine] ? "close" : "ok"); }
       }
       b.addEventListener("click", function () {
         wordTap(mine, t.raw.replace(/[^A-Za-z0-9'’-]/g, "") || t.raw);
       });
       box.appendChild(b);
     });
+
+    var ft = verdict ? fullOf(cur) : "";
+    $("fullTr").textContent = ft; $("fullTr").hidden = !ft;
 
     var dots = $("dots"); dots.textContent = "";
     sentences.forEach(function (_, i) {
@@ -405,6 +474,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     $("micBtn").classList.toggle("live", listening);
     $("micLabel").textContent = listening ? "סיימתי" : attempt ? "להמשיך לקרוא" : verdict ? "לנסות שוב" : "התחילי לקרוא";
     $("finishBtn").hidden = !(attempt && !listening);
+    $("skipBtn").hidden = !attempt;
     $("listenBtn").hidden = !hasSynth; $("slowBtn").hidden = !hasSynth; $("wordHint").hidden = !hasSynth;
     $("listenBtn").disabled = listening;
     $("listenLabel").textContent = talking ? "עצירה" : "השמיעי לי";
@@ -418,6 +488,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
       $("fbText").textContent = verdict.text;
       $("heard").textContent = verdict.heard ? "שמעתי: " + verdict.heard : "";
     }
+    drawPractice();
   }
   function go(i) {
     if (listening || i < 0 || i >= sentences.length) { return; }
@@ -442,11 +513,14 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     }
     for (i = 0; i < n; i++) { if (r.missed[i] || i >= r.cursor) { miss[i] = true; bad++; } }
     var good = n - bad, ratio = good / n, s = ratio === 1 ? 3 : ratio >= 0.75 ? 2 : ratio >= 0.4 ? 1 : 0;
+    var nClose = Object.keys(r.close || {}).length;
+    if (s === 3 && nClose) { s = 2; }        // every word read, but some only nearly
     verdict = {
-      stars: s, heard: heard, miss: miss,
+      stars: s, heard: heard, miss: miss, close: r.close || {}, words: practiceWords(a, r),
       title: s === 3 ? "מושלם!" : s === 2 ? "כמעט!" : s === 1 ? "התחלה טובה" : "בואי ננסה שוב",
       text: (s === 3 ? "קראת את כל הקטע נכון ולפי הסדר." :
-        good + " מתוך " + n + " מילים נכונות. לחצי על המילים האדומות כדי לשמוע אותן, ונסי שוב.") +
+        ratio === 1 ? "קראת את כל הקטע, אבל " + (nClose === 1 ? "מילה אחת נשמעה קצת אחרת. היא מסומנת בצהוב." : nClose + " מילים נשמעו קצת אחרת. הן מסומנות בצהוב.") :
+        good + " מתוך " + n + " מילים נכונות. המילים לתרגול מחכות כאן למטה.") +
         (helped ? " נעזרת בהשמעה של " + (helped === 1 ? "מילה אחת." : helped + " מילים.") : "")
     };
     if (!stars[idx] || s > stars[idx]) { stars[idx] = s; }
@@ -461,7 +535,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     if (r) { try { r.abort(); } catch (e) { /* already stopped */ } }
   }
   function startListening() {
-    if (!SR || rec) { return; }
+    if (!SR || rec || drillBusy) { return; }
     stopSynth();
     sesFinal = ""; sesInterim = ""; gotText = false; lastErr = "";
     var r = new SR(), started = false;
@@ -526,7 +600,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     if (!SR) { return; }
     if (listening) { finishListening(); return; }
     showNote("");
-    if (!attempt) { verdict = null; wantFinish = false; attempt = { text: "", helped: {}, ms: 0 }; }
+    if (!attempt) { verdict = null; wantFinish = false; attempt = { text: "", helped: {}, skips: {}, ms: 0 }; }
     idleRestarts = 0;
     startListening();
     render();
@@ -605,12 +679,16 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   $("nextBtn").addEventListener("click", function () { go(idx + 1); });
   $("glossToggle").addEventListener("change", function () {
     showHe = this.checked;
-    try { localStorage.setItem(LS_GLOSS, showHe ? "1" : "0"); } catch (e) { /* storage blocked */ }
+    try { localStorage.setItem(glossKey(), showHe ? "1" : "0"); } catch (e) { /* storage blocked */ }
     render();
   });
 
   // ---------- what to read: the teacher's passages, a level from the bank, or a set picked for this girl ----------
-  function soundsFor(s) { return tokens(s).map(function (t) { return (t.key && bank.sounds[clean(t.raw)]) || ""; }); }
+  function soundsFor(s) {
+    var L = bank.levels.filter(function (l) { return l.passages.indexOf(s) >= 0; })[0];
+    if (L && L.plain) { return null; }       // the higher levels come without a pronunciation line
+    return tokens(s).map(function (t) { return (t.key && bank.sounds[clean(t.raw)]) || ""; });
+  }
   function hardWords(max) {       // the words she misread, got stuck on or asked to hear, in her recent tries
     var c = {};
     log.slice(-80).forEach(function (r) { hard(r).forEach(function (w) { c[w] = (c[w] || 0) + 1; }); });
@@ -681,6 +759,118 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     hint.textContent = text; hint.hidden = !text;
   }
 
+  // ---------- translation, shown once a passage has been read ----------
+  // What came with a passage (the parent's saved set, a link, passages Claude wrote) wins;
+  // otherwise the bank's own dictionary and translations are used.
+  function addTr(list) {
+    if (!Array.isArray(list)) { return; }
+    list.forEach(function (x) {
+      if (x && typeof x.s === "string") { trBy[x.s] = { m: Array.isArray(x.m) ? x.m.map(String) : [], f: String(x.f || "") }; }
+    });
+  }
+  function trList(list) {
+    return list.map(function (s) { return trBy[s] ? { s: s, m: trBy[s].m, f: trBy[s].f } : null; }).filter(Boolean);
+  }
+  function meaningOf(s, ti, raw) {
+    var t = trBy[s];
+    return (t && t.m && t.m[ti]) || (bank && bank.meanings && bank.meanings[clean(raw)]) || "";
+  }
+  function fullOf(s) { var t = trBy[s]; return (t && t.f) || (bank && bank.full && bank.full[s]) || ""; }
+  // the pronunciation line is each girl's own choice
+  function glossKey() { return LS_GLOSS + (me ? "-" + me.id : ""); }
+  function loadGlossPref() {
+    try { showHe = (localStorage.getItem(glossKey()) || localStorage.getItem(LS_GLOSS)) !== "0"; } catch (e) { /* storage blocked */ }
+    $("glossToggle").checked = showHe;
+  }
+
+  // ---------- a word she cannot get past: skip it now, practise it afterwards ----------
+  $("skipBtn").addEventListener("click", function () {
+    if (!attempt) { return; }
+    var r = progress();
+    if (r.cursor >= realKeys().length) { return; }
+    attempt.skips[r.cursor] = tokens(attempt.text + " " + sesFinal + " " + sesInterim).filter(function (t) { return t.key; }).length;
+    live();
+  });
+  function practiceWords(a, r) {
+    var real = toks.filter(function (t) { return t.key; }), seen = {}, out = [];
+    var add = function (i) { var t = real[i], w = t ? clean(t.raw) : ""; if (w && !seen[w]) { seen[w] = 1; out.push(w); } };
+    Object.keys(r.missed).forEach(add); Object.keys(r.close || {}).forEach(add); Object.keys(a.helped || {}).forEach(add);
+    if (r.cursor < real.length) { add(r.cursor); }
+    return out.slice(0, 10);
+  }
+  function tipFor(w) {
+    var tips = [];
+    if (/th/.test(w)) { tips.push("בצליל th מוציאים את קצה הלשון בין השיניים ונושפים. זה לא ת' ולא ד'."); }
+    if (/^w|[st]w|qu/.test(w)) { tips.push("בצליל w מעגלים את השפתיים כמו כשאומרים וּ, והשיניים לא נוגעות בשפה."); }
+    if (/^r|[bcdfgkpt]r/.test(w)) { tips.push("הצליל r באנגלית רך: הלשון מתקפלת לאחור ולא נוגעת בחך."); }
+    if (/ing$/.test(w)) { tips.push("בסיומת ing לא שומעים ג' בסוף."); }
+    return tips.slice(0, 2).join(" ");
+  }
+  function drawPractice() {
+    var words = verdict ? verdict.words || [] : [], chips = $("practiceChips");
+    if (!verdict) { drill = null; }
+    chips.textContent = ""; $("practiceRow").hidden = !words.length;
+    words.forEach(function (w) {
+      var c = el("button", "chip" + (drill && drill.word === w ? " on" : ""), w);
+      c.addEventListener("click", function () { openDrill(w); });
+      chips.appendChild(c);
+    });
+    var box = $("drill"); box.hidden = !drill;
+    if (!drill) { return; }
+    var ti = -1; toks.forEach(function (t, i) { if (ti < 0 && clean(t.raw) === drill.word) { ti = i; } });
+    var g = glosses[idx], cur = sentences[idx] || "";
+    var snd = showHe ? (ti >= 0 && g && g[ti]) || (bank && bank.sounds && bank.sounds[drill.word]) || "" : "";
+    var mean = ti >= 0 ? meaningOf(cur, ti, drill.word) : (bank && bank.meanings && bank.meanings[drill.word]) || "";
+    $("drillWord").textContent = drill.word;
+    $("drillSub").textContent = [snd, mean].filter(Boolean).join("  ·  ");
+    $("drillTip").textContent = tipFor(drill.word);
+    $("drillSay").hidden = !(SR);
+    $("drillSay").disabled = drillBusy; $("drillHear").disabled = drillBusy;
+    $("drillSay").lastChild.textContent = drillBusy ? "מקשיבה…" : "נסי לומר";
+    $("drillResult").textContent = drill.result || "";
+    $("drillResult").style.color = drill.ok === 2 ? "var(--good)" : drill.ok === 1 ? "var(--ink)" : "var(--miss)";
+  }
+  function openDrill(w) {
+    if (listening || drillBusy) { return; }
+    drill = { word: w, key: norm(w), result: "", ok: 0 };
+    render(); speak(w, WORD_RATE);
+  }
+  function judgeDrill(all, first) {
+    var keys = tokens(all).map(function (t) { return t.key; }).filter(Boolean);
+    var exact = keys.indexOf(drill.key) >= 0, close = !exact && keys.some(function (k) { return near(k, drill.key); });
+    var shown = String(first || "").replace(/\s+/g, " ").trim().slice(0, 60);
+    drill.ok = exact ? 2 : close ? 1 : 0;
+    drill.result = exact ? "מצוין! שמעתי " + drill.word + "."
+      : !shown ? "לא שמעתי כלום. נסי שוב, קרוב יותר למיקרופון."
+      : (close ? "כמעט. " : "") + "שמעתי: " + shown + ". הקשיבי שוב ונסי עוד פעם.";
+  }
+  $("drillHear").addEventListener("click", function () { if (drill && !listening && !drillBusy) { speak(drill.word, WORD_RATE); } });
+  $("drillClose").addEventListener("click", function () { if (!drillBusy) { drill = null; render(); } });
+  // The single word is heard on its own, with the recogniser's other guesses, so a word that
+  // the long reading keeps missing gets a fairer hearing here.
+  $("drillSay").addEventListener("click", function () {
+    if (!SR || !drill || drillBusy || listening || rec) { return; }
+    stopSynth();
+    var r = new SR(), heard = [], err = "", d = drill;
+    r.lang = "en-US"; r.continuous = false; r.interimResults = false; r.maxAlternatives = 5;
+    drillBusy = true; d.result = ""; render();
+    r.onresult = function (e) {
+      for (var i = 0; i < e.results.length; i++) { for (var k = 0; k < e.results[i].length; k++) { heard.push(e.results[i][k].transcript); } }
+    };
+    r.onerror = function (e) { err = (e && e.error) || "error"; };
+    r.onend = function () {
+      if (!drillBusy) { return; }
+      drillBusy = false;
+      if (drill === d) {
+        if (err === "not-allowed" || err === "service-not-allowed") { d.result = "אין גישה למיקרופון."; d.ok = 0; }
+        else { judgeDrill(heard.join(" "), heard[0]); }
+      }
+      render();
+    };
+    try { r.start(); } catch (x) { drillBusy = false; d.result = "לא הצלחתי להפעיל את המיקרופון."; render(); return; }
+    setTimeout(function () { if (drillBusy && drill === d) { try { r.stop(); } catch (x) { /* already stopped */ } } }, 6000);
+  });
+
   // ---------- who is reading ----------
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -700,7 +890,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     });
   }
   function pick(p) {
-    me = p; log = readLog(p.id); saveProfiles();
+    me = p; log = readLog(p.id); saveProfiles(); loadGlossPref();
     stars = bestStars(); attempt = null; verdict = null; showNote("");
     showChooser(false); render();
     if (source === "mine") { setSource("mine"); }      // the picked set is hers, so pick it again for this girl
@@ -740,7 +930,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
       d.ms += r.ms; d.tries++; d.good += r.good; d.tried += tried(r);
       var p = passMap[r.s] || (passMap[r.s] = { s: r.s, tries: 0, best: 0, last: r });
       p.tries++; p.best = Math.max(p.best, r.st); if (r.t >= p.last.t) { p.last = r; }
-      r.miss.concat(r.stuck ? [r.stuck] : [], r.help).forEach(function (w) { if (w) { wordMap[w] = (wordMap[w] || 0) + 1; } });
+      hard(r).forEach(function (w) { wordMap[w] = (wordMap[w] || 0) + 1; });
     });
     o.days = Object.keys(dayMap).map(function (k) { return dayMap[k]; }).sort(function (a, b) { return b.t - a.t; });
     o.pass = Object.keys(passMap).map(function (k) { return passMap[k]; }).sort(function (a, b) { return b.last.t - a.last.t; });
@@ -749,7 +939,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   }
   function hard(r) {
     var seen = {}, out = [];
-    r.miss.concat(r.stuck ? [r.stuck] : [], r.help).forEach(function (w) { if (w && !seen[w]) { seen[w] = 1; out.push(w); } });
+    r.miss.concat(r.stuck ? [r.stuck] : [], r.help, r.close || [], r.skip || []).forEach(function (w) { if (w && !seen[w]) { seen[w] = 1; out.push(w); } });
     return out;
   }
   function reportText(name, label, o) {
@@ -880,7 +1070,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     var known = {};       // passages that stay as they were keep their Hebrew line
     if (isLocal && source === "teacher") { sentences.forEach(function (s, i) { if (hasGloss(glosses[i])) { known[s] = glosses[i]; } }); }
     var gl = list.map(function (s) { return known[s] || null; });
-    try { localStorage.setItem(LS_LOCAL, JSON.stringify({ sentences: list, glosses: gl, savedAt: new Date().toISOString() })); }
+    try { localStorage.setItem(LS_LOCAL, JSON.stringify({ sentences: list, glosses: gl, tr: trList(list), savedAt: new Date().toISOString() })); }
     catch (e) { $("saveStatus").textContent = "לא הצלחתי לשמור במכשיר הזה."; return; }
     source = "teacher"; saveSource();
     idx = 0; use(list, gl, true);
@@ -901,6 +1091,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     var local = null;
     try { local = JSON.parse(localStorage.getItem(LS_LOCAL) || "null"); } catch (e) { /* no local set */ }
     var ok = local && Array.isArray(local.sentences) && local.sentences.length;
+    if (ok) { addTr(local.tr); }
     // passages typed on this device win until the teacher's set is updated after them
     if (ok && (!teacher.updatedAt || String(local.savedAt || "") > teacher.updatedAt)) {
       var lg = Array.isArray(local.glosses) ? local.glosses.map(function (g) { return Array.isArray(g) ? g.map(String) : null; }) : [];
@@ -919,6 +1110,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     }
   } catch (e) { /* storage blocked */ }
   if (!me) { showChooser(true); }
+  loadGlossPref();
 
   if (!SR) {
     $("envNote").textContent = "הדפדפן הזה לא יודע להקשיב לקריאה. באייפד ובאייפון צריך לפתוח את הדף ב-Safari. אפשר עדיין להשמיע את הקטעים.";
@@ -942,14 +1134,19 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
       for (var i = 0; i < bin.length; i++) { bytes[i] = bin.charCodeAt(i); }
       var d = JSON.parse(new TextDecoder().decode(bytes));
       if (!d || !Array.isArray(d.s)) { return null; }
-      var s = [], g = [];
+      var s = [], g = [], tr = [];
       d.s.slice(0, 100).forEach(function (x, k) {
         var text = String(x == null ? "" : x).replace(/\s+/g, " ").trim().slice(0, 300);
         if (!/[A-Za-z]/.test(text)) { return; }
         var gl = Array.isArray(d.g) && typeof d.g[k] === "string" ? d.g[k].split("|").map(function (w) { return w.slice(0, 40); }) : null;
-        s.push(text); g.push(gl && gl.length === tokens(text).length ? gl : null);
+        var cnt = tokens(text).length;
+        var mm = Array.isArray(d.m) && typeof d.m[k] === "string" && d.m[k] ? d.m[k].split("|").map(function (w) { return w.slice(0, 40); }) : null;
+        var ff = Array.isArray(d.f) && typeof d.f[k] === "string" ? d.f[k].slice(0, 600) : "";
+        if (mm && mm.length !== cnt) { mm = null; }
+        s.push(text); g.push(gl && gl.length === cnt ? gl : null);
+        if (mm || ff) { tr.push({ s: text, m: mm || [], f: ff }); }
       });
-      return s.length ? { s: s, g: g } : null;
+      return s.length ? { s: s, g: g, tr: tr } : null;
     } catch (e) { return null; }
   }
   function clearHash() { try { history.replaceState(null, "", location.pathname + location.search); } catch (e) { /* stays in the address bar */ } }
@@ -964,9 +1161,10 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   }
   $("importYes").addEventListener("click", function () {
     if (!incoming || listening) { return; }
-    try { localStorage.setItem(LS_LOCAL, JSON.stringify({ sentences: incoming.s, glosses: incoming.g, savedAt: new Date().toISOString() })); }
+    try { localStorage.setItem(LS_LOCAL, JSON.stringify({ sentences: incoming.s, glosses: incoming.g, tr: incoming.tr, savedAt: new Date().toISOString() })); }
     catch (e) { showNote("לא הצלחתי לשמור את הקטעים במכשיר הזה."); return; }
     source = "teacher"; wantSrc = "teacher"; saveSource();
+    addTr(incoming.tr);
     idx = 0; use(incoming.s, incoming.g, true);
     incoming = null; $("importBox").hidden = true; clearHash();
   });
