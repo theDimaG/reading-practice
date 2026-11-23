@@ -1008,7 +1008,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     var fail = function () { $("cloudGo").disabled = false; st.textContent = "לא הצלחתי להתחבר. בדקו את החיבור לאינטרנט."; };
     $("cloudGo").disabled = true; st.textContent = newMode ? "פותחים חשבון…" : "מתחברים…";
     if (newMode) {
-      sb.auth.signUp({ email: email, password: pass, options: { data: { display_name: name } } }).then(function (r) {
+      sb.auth.signUp({ email: email, password: pass, options: { data: { display_name: name }, emailRedirectTo: location.origin + location.pathname } }).then(function (r) {
         $("cloudGo").disabled = false; $("cloudPass").value = "";
         if (!r || r.error) { st.textContent = "לא הצלחתי לפתוח חשבון. אולי כבר יש חשבון עם האימייל הזה?"; return; }
         if (r.data && r.data.session && r.data.user) { $("cloudName").value = ""; return cloudEnter(r.data.user); }
@@ -1384,6 +1384,9 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     $("importBox").hidden = false;
   } else if (/^#set=/.test(location.hash || "")) {
     showNote("הקישור שנפתח לא תקין או נחתך בדרך. בקשו קישור חדש.");
+    clearHash();
+  } else if (/[#&]error_code=/.test(location.hash || "")) {      // a confirmation link that expired or was already used
+    showNote("הקישור מהמייל כבר לא בתוקף, אבל ייתכן שהחשבון כבר אושר. נסו להיכנס עם האימייל והסיסמה.");
     clearHash();
   }
   $("importYes").addEventListener("click", function () {
