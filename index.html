@@ -136,6 +136,8 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
 .chip { border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 6px 12px; font-size: .95rem; cursor: pointer; }
 .chip small { color: var(--miss); font-family: var(--ui); }
 .danger { color: var(--miss); border-color: color-mix(in srgb, var(--miss) 45%, var(--line)); }
+#importBox { display: flex; flex-direction: column; gap: 10px; border-style: solid; border-color: var(--accent); }
+#importBox .en { margin: 0; font-family: var(--read); color: var(--ink); overflow-wrap: anywhere; }
 .srcbar { justify-content: center; gap: 8px; }
 #srcHint { text-align: center; }
 </style>
@@ -144,9 +146,18 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
 <div class="app">
   <header>
     <h1>קוראים באנגלית</h1>
-    <span class="row"><span class="badge" id="localBadge" hidden>קטעים שהוקלדו כאן</span> <span class="count" id="count"></span>
+    <span class="row"><span class="badge" id="localBadge" hidden>קטעים שנשמרו במכשיר הזה</span> <span class="count" id="count"></span>
       <button class="btn small" id="whoBtn" type="button" hidden></button></span>
   </header>
+
+  <div class="note" id="importBox" hidden>
+    <p class="hintline" id="importText"></p>
+    <p class="en" id="importFirst" dir="ltr" lang="en"></p>
+    <div class="row">
+      <button class="btn" id="importYes" type="button">טעינת הקטעים</button>
+      <button class="btn" id="importNo" type="button">ביטול</button>
+    </div>
+  </div>
 
   <section class="chooser" id="chooser" hidden>
     <h2>מי קוראת עכשיו?</h2>
@@ -205,11 +216,11 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   <details id="parent">
     <summary>להורים: קטעים אחרים</summary>
     <div class="editor">
-      <p>אפשר להקליד או להדביק כאן קטעים אחרים, קטע בכל שורה. הם נשמרים רק במכשיר הזה, ובלי הגייה בעברית.</p>
+      <p>אפשר להקליד או להדביק כאן קטעים אחרים, קטע בכל שורה. הם נשמרים רק במכשיר הזה. הגייה בעברית מגיעה רק עם קטעים שנטענו מקישור.</p>
       <textarea id="editor" dir="ltr" lang="en" spellcheck="false"></textarea>
       <div class="row">
         <button class="btn" id="saveBtn" type="button">שמירה</button>
-        <button class="btn" id="resetBtn" type="button" hidden>חזרה לקטעים מהמורה</button>
+        <button class="btn" id="resetBtn" type="button" hidden>חזרה לקטעים המקוריים</button>
         <span id="saveStatus" role="status"></span>
       </div>
     </div>
@@ -866,10 +877,13 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     var list = parseEditor($("editor").value);
     if (!list.length) { $("saveStatus").textContent = "לא מצאתי טקסט באנגלית."; return; }
     if (listening) { return; }
-    try { localStorage.setItem(LS_LOCAL, JSON.stringify({ sentences: list, savedAt: new Date().toISOString() })); }
+    var known = {};       // passages that stay as they were keep their Hebrew line
+    if (isLocal && source === "teacher") { sentences.forEach(function (s, i) { if (hasGloss(glosses[i])) { known[s] = glosses[i]; } }); }
+    var gl = list.map(function (s) { return known[s] || null; });
+    try { localStorage.setItem(LS_LOCAL, JSON.stringify({ sentences: list, glosses: gl, savedAt: new Date().toISOString() })); }
     catch (e) { $("saveStatus").textContent = "לא הצלחתי לשמור במכשיר הזה."; return; }
     source = "teacher"; saveSource();
-    idx = 0; use(list, [], true);
+    idx = 0; use(list, gl, true);
     $("resetBtn").hidden = false;
     $("saveStatus").textContent = "נשמרו " + list.length + " קטעים במכשיר הזה.";
   });
@@ -888,7 +902,10 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     try { local = JSON.parse(localStorage.getItem(LS_LOCAL) || "null"); } catch (e) { /* no local set */ }
     var ok = local && Array.isArray(local.sentences) && local.sentences.length;
     // passages typed on this device win until the teacher's set is updated after them
-    if (ok && (!teacher.updatedAt || String(local.savedAt || "") > teacher.updatedAt)) { use(local.sentences.map(String), [], true); }
+    if (ok && (!teacher.updatedAt || String(local.savedAt || "") > teacher.updatedAt)) {
+      var lg = Array.isArray(local.glosses) ? local.glosses.map(function (g) { return Array.isArray(g) ? g.map(String) : null; }) : [];
+      use(local.sentences.map(String), lg, true);
+    }
     else { use(teacher.sentences, teacher.glosses, false); }
   }
   try {
@@ -912,6 +929,48 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   }
   if (hasSynth) { try { window.speechSynthesis.getVoices(); } catch (e) { /* voices load lazily */ } }
   render();
+
+  // ---------- passages that arrive inside a link (#set=...) ----------
+  // The link is made by the parent's own page. Anyone could craft one, so what it carries is
+  // checked, shown as plain text only, and loaded only after someone on this device agrees.
+  function readLinkSet() {
+    var m = /^#set=([A-Za-z0-9_-]{8,60000})$/.exec(location.hash || "");
+    if (!m) { return null; }
+    try {
+      var b = m[1].replace(/-/g, "+").replace(/_/g, "/"); while (b.length % 4) { b += "="; }
+      var bin = atob(b), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) { bytes[i] = bin.charCodeAt(i); }
+      var d = JSON.parse(new TextDecoder().decode(bytes));
+      if (!d || !Array.isArray(d.s)) { return null; }
+      var s = [], g = [];
+      d.s.slice(0, 100).forEach(function (x, k) {
+        var text = String(x == null ? "" : x).replace(/\s+/g, " ").trim().slice(0, 300);
+        if (!/[A-Za-z]/.test(text)) { return; }
+        var gl = Array.isArray(d.g) && typeof d.g[k] === "string" ? d.g[k].split("|").map(function (w) { return w.slice(0, 40); }) : null;
+        s.push(text); g.push(gl && gl.length === tokens(text).length ? gl : null);
+      });
+      return s.length ? { s: s, g: g } : null;
+    } catch (e) { return null; }
+  }
+  function clearHash() { try { history.replaceState(null, "", location.pathname + location.search); } catch (e) { /* stays in the address bar */ } }
+  var incoming = readLinkSet();
+  if (incoming) {
+    $("importText").textContent = "בקישור שנפתח יש " + incoming.s.length + (incoming.s.length === 1 ? " קטע חדש" : " קטעים חדשים") + ". לטעון אותם למכשיר הזה? הקטע הראשון:";
+    $("importFirst").textContent = incoming.s[0];
+    $("importBox").hidden = false;
+  } else if (/^#set=/.test(location.hash || "")) {
+    showNote("הקישור שנפתח לא תקין או נחתך בדרך. בקשו קישור חדש.");
+    clearHash();
+  }
+  $("importYes").addEventListener("click", function () {
+    if (!incoming || listening) { return; }
+    try { localStorage.setItem(LS_LOCAL, JSON.stringify({ sentences: incoming.s, glosses: incoming.g, savedAt: new Date().toISOString() })); }
+    catch (e) { showNote("לא הצלחתי לשמור את הקטעים במכשיר הזה."); return; }
+    source = "teacher"; wantSrc = "teacher"; saveSource();
+    idx = 0; use(incoming.s, incoming.g, true);
+    incoming = null; $("importBox").hidden = true; clearHash();
+  });
+  $("importNo").addEventListener("click", function () { incoming = null; $("importBox").hidden = true; clearHash(); });
 
   fetch("data.json", { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
     if (d && Array.isArray(d.sentences) && d.sentences.length) {
