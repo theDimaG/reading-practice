@@ -105,15 +105,58 @@ textarea {
 }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 #saveStatus { color: var(--muted); font-size: .92rem; }
+
+#practice { display: flex; flex-direction: column; gap: 18px; }
+.btn.small { padding: 6px 14px; font-size: .92rem; }
+.btn.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.hintline { margin: 0; color: var(--muted); font-size: .92rem; }
+.chooser { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 24px 20px; display: flex; flex-direction: column; gap: 16px; }
+.chooser h2 { margin: 0; font-size: 1.25rem; }
+.chooser .btn.name { font-size: 1.15rem; font-weight: 700; padding: 14px 26px; }
+input[type="text"] {
+  font-family: var(--ui); font-size: 1rem; padding: 11px 14px; border-radius: 12px; min-width: 0; flex: 1 1 160px; max-width: 260px;
+  border: 1.5px solid var(--line); background: var(--surface); color: var(--ink);
+}
+.report { display: flex; flex-direction: column; gap: 16px; margin-top: 12px; }
+.report h3 { margin: 0; font-size: 1rem; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+.tile b { display: block; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.tile span { color: var(--muted); font-size: .88rem; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: start; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; font-size: .88rem; }
+.pass { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.pass .en { font-family: var(--read); overflow-wrap: anywhere; }
+.pass .meta { color: var(--muted); font-size: .9rem; }
+.pass .bad { color: var(--miss); font-size: .92rem; }
+.pass .bad bdi, .chip { font-family: var(--read); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 6px 12px; font-size: .95rem; cursor: pointer; }
+.chip small { color: var(--miss); font-family: var(--ui); }
+.danger { color: var(--miss); border-color: color-mix(in srgb, var(--miss) 45%, var(--line)); }
 </style>
 </head>
 <body>
 <div class="app">
   <header>
     <h1>קוראים באנגלית</h1>
-    <span><span class="badge" id="localBadge" hidden>קטעים שהוקלדו כאן</span> <span class="count" id="count"></span></span>
+    <span class="row"><span class="badge" id="localBadge" hidden>קטעים שהוקלדו כאן</span> <span class="count" id="count"></span>
+      <button class="btn small" id="whoBtn" type="button" hidden></button></span>
   </header>
 
+  <section class="chooser" id="chooser" hidden>
+    <h2>מי קוראת עכשיו?</h2>
+    <div class="row" id="profileList"></div>
+    <div class="row">
+      <input type="text" id="newName" maxlength="20" placeholder="שם של ילדה חדשה" autocomplete="off">
+      <button class="btn" id="addProfile" type="button">הוספה</button>
+    </div>
+    <p class="hintline">השמות והדוחות נשמרים רק במכשיר הזה.</p>
+  </section>
+
+  <div id="practice">
   <div class="sentence" id="sentence" dir="ltr" lang="en"></div>
   <div class="hintrow">
     <span id="wordHint">לחיצה על מילה משמיעה אותה</span>
@@ -148,6 +191,12 @@ textarea {
     <div class="dots" id="dots"></div>
     <button class="btn" id="nextBtn" type="button">הבא</button>
   </div>
+  </div>
+
+  <details id="reportBox">
+    <summary>להורים: דוח קריאה</summary>
+    <div class="report" id="report"></div>
+  </details>
 
   <details id="parent">
     <summary>להורים: קטעים אחרים</summary>
@@ -223,10 +272,64 @@ textarea {
   var rec = null, sesFinal = "", sesInterim = "", gotText = false, lastErr = "", idleRestarts = 0;
   var listening = false, pendingWord = null, verdict = null, wantFinish = false, showHe = true;
   var talking = false, sayingTok = -1, synthRun = 0;
+  // Who is reading, and what each girl has read. Kept on this device only: nothing here is ever sent anywhere.
+  var LS_PROF = "reading-ipad-profiles", LS_CUR = "reading-ipad-current", LS_LOG = "reading-ipad-log-";
+  var profiles = [], me = null, log = [], listenT0 = 0;
+
+  function readLog(id) {
+    try { var l = JSON.parse(localStorage.getItem(LS_LOG + id) || "[]"); return Array.isArray(l) ? l : []; } catch (e) { return []; }
+  }
+  function writeLog() {
+    if (log.length > 600) { log = log.slice(-600); }
+    try { localStorage.setItem(LS_LOG + me.id, JSON.stringify(log)); } catch (e) { /* storage blocked or full */ }
+  }
+  function saveProfiles() {
+    try {
+      localStorage.setItem(LS_PROF, JSON.stringify(profiles));
+      if (me) { localStorage.setItem(LS_CUR, me.id); } else { localStorage.removeItem(LS_CUR); }
+    } catch (e) { /* storage blocked */ }
+  }
+  function bestStars() {
+    var out = {};
+    log.forEach(function (r) { var i = sentences.indexOf(r.s); if (i >= 0 && r.st > (out[i] || 0)) { out[i] = r.st; } });
+    return out;
+  }
+  function clean(raw) { return raw.replace(/[^A-Za-z0-9'’-]/g, "").toLowerCase(); }
+  function tick() {      // time spent with the microphone open counts as reading time
+    if (listenT0 && attempt) { attempt.ms = (attempt.ms || 0) + Math.min(Date.now() - listenT0, 300000); }
+    listenT0 = 0;
+  }
+  function record(a, r, st) {
+    if (!me) { return; }
+    var real = toks.filter(function (t) { return t.key; }), n = real.length;
+    var wordsAt = function (map) {
+      return Object.keys(map).map(function (k) { return real[k]; }).filter(Boolean).map(function (t) { return clean(t.raw); });
+    };
+    var done = r.cursor >= n;
+    log.push({
+      t: Date.now(), s: (sentences[idx] || "").slice(0, 300), n: n,
+      good: r.cursor - Object.keys(r.missed).length, miss: wordsAt(r.missed),
+      stuck: done || !real[r.cursor] ? "" : clean(real[r.cursor].raw), help: wordsAt(a.helped),
+      ms: Math.round(a.ms || 0), st: st, done: done
+    });
+    writeLog();
+  }
+  // A try that is left in the middle (another passage, another girl) still counts in the report.
+  function abandon() {
+    if (!attempt) { return; }
+    tick();
+    var r = progress(), n = realKeys().length || 1;
+    if ((attempt.text + sesFinal + sesInterim).trim() && r.cursor > 0) {
+      var ratio = (r.cursor - Object.keys(r.missed).length) / n;
+      record(attempt, r, ratio === 1 ? 3 : ratio >= 0.75 ? 2 : ratio >= 0.4 ? 1 : 0);
+    }
+    attempt = null;
+  }
 
   function hasGloss(g) { return Array.isArray(g) && g.some(Boolean); }
   function use(list, gl, local) {
-    sentences = list; glosses = gl || []; isLocal = local; stars = {};
+    abandon();
+    sentences = list; glosses = gl || []; isLocal = local; stars = bestStars();
     if (idx >= sentences.length) { idx = 0; }
     attempt = null; verdict = null; pendingWord = null; render();
   }
@@ -241,6 +344,7 @@ textarea {
     toks = tokens(sentences[idx] || "");
     $("count").textContent = sentences.length ? "קטע " + (idx + 1) + " מתוך " + sentences.length : "";
     $("localBadge").hidden = !isLocal;
+    $("whoBtn").hidden = !me; $("whoBtn").textContent = me ? me.name + " ▾" : "";
     $("prevBtn").disabled = idx === 0 || listening;
     $("nextBtn").disabled = idx >= sentences.length - 1 || listening;
 
@@ -300,7 +404,7 @@ textarea {
   }
   function go(i) {
     if (listening || i < 0 || i >= sentences.length) { return; }
-    stopSynth(); dropRec();
+    abandon(); stopSynth(); dropRec();
     idx = i; attempt = null; verdict = null; pendingWord = null; wantFinish = false; sayingTok = -1; showNote("");
     try { localStorage.setItem(LS_IDX, String(idx)); } catch (e) { /* storage blocked */ }
     render();
@@ -308,6 +412,8 @@ textarea {
   function showNote(text) { var n = $("micNote"); n.textContent = text; n.hidden = !text; }
 
   function conclude() {
+    tick();
+    var a = attempt;
     var r = progress(), n = realKeys().length || 1, miss = {}, bad = 0, i;
     var heard = (attempt.text + " " + sesFinal + " " + sesInterim).replace(/\s+/g, " ").trim();
     var helped = Object.keys(attempt.helped).length;
@@ -327,7 +433,9 @@ textarea {
         (helped ? " נעזרת בהשמעה של " + (helped === 1 ? "מילה אחת." : helped + " מילים.") : "")
     };
     if (!stars[idx] || s > stars[idx]) { stars[idx] = s; }
+    record(a, r, s);
     render();
+    if ($("reportBox").open) { drawReport(); }
   }
 
   // ---------- listening (the browser's own speech recognition) ----------
@@ -342,7 +450,7 @@ textarea {
     var r = new SR(), started = false;
     r.lang = "en-US"; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
     rec = r;
-    r.onstart = function () { if (r !== rec) { return; } started = true; listening = true; showNote(""); render(); };
+    r.onstart = function () { if (r !== rec) { return; } started = true; listening = true; listenT0 = Date.now(); showNote(""); render(); };
     r.onresult = function (e) {
       if (r !== rec || !attempt) { return; }
       var f = "", it = "";
@@ -364,6 +472,7 @@ textarea {
   // The recognition session is over: the browser ends it by itself after a silence.
   // Only "סיימתי" or reading every word ends the try; otherwise keep what was read and listen again.
   function ended() {
+    tick();
     if (!attempt) { listening = false; render(); return; }
     attempt.text += " " + sesFinal + " " + sesInterim; sesFinal = ""; sesInterim = "";
     if (wantFinish || progress().cursor >= realKeys().length) { listening = false; conclude(); return; }
@@ -400,7 +509,7 @@ textarea {
     if (!SR) { return; }
     if (listening) { finishListening(); return; }
     showNote("");
-    if (!attempt) { verdict = null; wantFinish = false; attempt = { text: "", helped: {} }; }
+    if (!attempt) { verdict = null; wantFinish = false; attempt = { text: "", helped: {}, ms: 0 }; }
     idleRestarts = 0;
     startListening();
     render();
@@ -483,6 +592,186 @@ textarea {
     render();
   });
 
+  // ---------- who is reading ----------
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) { e.className = cls; }
+    if (text != null) { e.textContent = text; }
+    if (tag === "button") { e.type = "button"; }
+    return e;
+  }
+  function showChooser(on) {
+    $("chooser").hidden = !on; $("practice").hidden = on;
+    if (!on) { return; }
+    var list = $("profileList"); list.textContent = "";
+    profiles.forEach(function (p) {
+      var b = el("button", "btn name", p.name);
+      b.addEventListener("click", function () { pick(p); });
+      list.appendChild(b);
+    });
+  }
+  function pick(p) {
+    me = p; log = readLog(p.id); saveProfiles();
+    stars = bestStars(); attempt = null; verdict = null; showNote("");
+    showChooser(false); render();
+    if ($("reportBox").open) { repWho = p.id; drawReport(); }
+  }
+  $("whoBtn").addEventListener("click", function () {
+    if (listening) { return; }
+    abandon(); stopSynth(); dropRec(); verdict = null; showNote("");
+    showChooser(true);
+  });
+  function addProfile() {
+    var name = $("newName").value.replace(/\s+/g, " ").trim().slice(0, 20);
+    if (!name || profiles.length >= 8) { return; }
+    var p = { id: "p" + Date.now().toString(36), name: name };
+    profiles.push(p); $("newName").value = "";
+    pick(p);
+  }
+  $("addProfile").addEventListener("click", addProfile);
+  $("newName").addEventListener("keydown", function (e) { if (e.key === "Enter") { addProfile(); } });
+
+  // ---------- parent: reading report ----------
+  var repWho = null, repDays = 7, armed = false;
+  function fmt(ms) { var s = Math.round(ms / 1000); return s < 60 ? s + " שנ׳" : Math.round(s / 60) + " דק׳"; }
+  function pct(a, b) { return b ? Math.round(100 * a / b) + "%" : "–"; }
+  function tried(r) { return r.good + r.miss.length + (r.stuck ? 1 : 0); }
+  function sentCount(s) { return s.split(/[.!?]+/).filter(function (x) { return /[A-Za-z]/.test(x); }).length || 1; }
+  function dayKey(t) { var d = new Date(t); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); }
+  function dayLabel(t) { var d = new Date(t); return d.getDate() + "." + (d.getMonth() + 1); }
+  function summarize(rows) {
+    var o = { ms: 0, tries: rows.length, done: 0, perfect: 0, sents: 0, good: 0, tried: 0, days: [], pass: [], words: [] };
+    var dayMap = {}, passMap = {}, wordMap = {};
+    rows.forEach(function (r) {
+      o.ms += r.ms; o.good += r.good; o.tried += tried(r);
+      if (r.done) { o.done++; o.sents += sentCount(r.s); }
+      if (r.st === 3) { o.perfect++; }
+      var k = dayKey(r.t), d = dayMap[k] || (dayMap[k] = { t: r.t, ms: 0, tries: 0, good: 0, tried: 0 });
+      d.ms += r.ms; d.tries++; d.good += r.good; d.tried += tried(r);
+      var p = passMap[r.s] || (passMap[r.s] = { s: r.s, tries: 0, best: 0, last: r });
+      p.tries++; p.best = Math.max(p.best, r.st); if (r.t >= p.last.t) { p.last = r; }
+      r.miss.concat(r.stuck ? [r.stuck] : [], r.help).forEach(function (w) { if (w) { wordMap[w] = (wordMap[w] || 0) + 1; } });
+    });
+    o.days = Object.keys(dayMap).map(function (k) { return dayMap[k]; }).sort(function (a, b) { return b.t - a.t; });
+    o.pass = Object.keys(passMap).map(function (k) { return passMap[k]; }).sort(function (a, b) { return b.last.t - a.last.t; });
+    o.words = Object.keys(wordMap).map(function (w) { return { w: w, c: wordMap[w] }; }).sort(function (a, b) { return b.c - a.c; }).slice(0, 14);
+    return o;
+  }
+  function hard(r) {
+    var seen = {}, out = [];
+    r.miss.concat(r.stuck ? [r.stuck] : [], r.help).forEach(function (w) { if (w && !seen[w]) { seen[w] = 1; out.push(w); } });
+    return out;
+  }
+  function reportText(name, label, o) {
+    var lines = ["דוח קריאה: " + name + " (" + label + ")",
+      "זמן קריאה: " + fmt(o.ms),
+      "קטעים: " + o.tries + ", מתוכם " + o.done + " עד הסוף ו-" + o.perfect + " בלי טעויות",
+      "משפטים שנקראו עד הסוף: " + o.sents,
+      "דיוק במילים: " + pct(o.good, o.tried)];
+    if (o.words.length) { lines.push("מילים קשות: " + o.words.map(function (x) { return x.w + " ×" + x.c; }).join(", ")); }
+    o.pass.forEach(function (p) {
+      var h = hard(p.last);
+      lines.push("• " + p.s + " — " + p.tries + " ניסיונות, בפעם האחרונה " + p.last.good + " מתוך " + p.last.n + (h.length ? ", קשה: " + h.join(", ") : ""));
+    });
+    return lines.join("\n");
+  }
+  function drawReport() {
+    var box = $("report"); box.textContent = ""; armed = false;
+    if (!profiles.length) { box.appendChild(el("p", "hintline", "עדיין אין כאן ילדות. מוסיפים ילדה במסך \"מי קוראת עכשיו?\".")); return; }
+    if (!profiles.some(function (p) { return p.id === repWho; })) { repWho = me ? me.id : profiles[0].id; }
+    var child = profiles.filter(function (p) { return p.id === repWho; })[0];
+
+    var who = el("div", "row");
+    profiles.forEach(function (p) {
+      var b = el("button", "btn small" + (p.id === repWho ? " on" : ""), p.name);
+      b.addEventListener("click", function () { repWho = p.id; drawReport(); });
+      who.appendChild(b);
+    });
+    box.appendChild(who);
+    var periods = [[1, "היום"], [7, "7 ימים"], [0, "הכול"]], label = "", per = el("div", "row");
+    periods.forEach(function (x) {
+      if (x[0] === repDays) { label = x[1]; }
+      var b = el("button", "btn small" + (x[0] === repDays ? " on" : ""), x[1]);
+      b.addEventListener("click", function () { repDays = x[0]; drawReport(); });
+      per.appendChild(b);
+    });
+    box.appendChild(per);
+
+    var now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    var from = repDays === 1 ? today : repDays ? today - (repDays - 1) * 86400000 : 0;
+    var all = me && me.id === repWho ? log : readLog(repWho);
+    var rows = all.filter(function (r) { return r && r.t >= from && typeof r.s === "string" && Array.isArray(r.miss) && Array.isArray(r.help); });
+
+    if (!rows.length) { box.appendChild(el("p", "hintline", child.name + " עוד לא קראה בתקופה הזאת.")); }
+    else {
+      var o = summarize(rows);
+      var tiles = el("div", "tiles");
+      [[fmt(o.ms), "זמן קריאה בקול"], [String(o.tries), "קטעים, " + o.done + " מהם עד הסוף"],
+       [String(o.sents), "משפטים שנקראו עד הסוף"], [pct(o.good, o.tried), "דיוק במילים"]].forEach(function (x) {
+        var t = el("div", "tile"); t.appendChild(el("b", "", x[0])); t.appendChild(el("span", "", x[1])); tiles.appendChild(t);
+      });
+      box.appendChild(tiles);
+
+      if (o.words.length) {
+        box.appendChild(el("h3", "", "מילים שהיא התקשתה בהן"));
+        var chips = el("div", "chips"); chips.dir = "ltr";
+        o.words.forEach(function (x) {
+          var c = el("button", "chip", x.w + " "); c.appendChild(el("small", "", "×" + x.c));
+          c.addEventListener("click", function () { if (!listening) { speak(x.w, WORD_RATE); } });
+          chips.appendChild(c);
+        });
+        box.appendChild(chips);
+      }
+
+      if (repDays !== 1 && o.days.length > 1) {
+        box.appendChild(el("h3", "", "לפי ימים"));
+        var wrap = el("div", "scroll"), tb = el("table"), hr = el("tr");
+        ["יום", "זמן", "קטעים", "דיוק"].forEach(function (h) { hr.appendChild(el("th", "", h)); });
+        tb.appendChild(hr);
+        o.days.forEach(function (d) {
+          var tr = el("tr");
+          [dayLabel(d.t), fmt(d.ms), String(d.tries), pct(d.good, d.tried)].forEach(function (v) { tr.appendChild(el("td", "", v)); });
+          tb.appendChild(tr);
+        });
+        wrap.appendChild(tb); box.appendChild(wrap);
+      }
+
+      box.appendChild(el("h3", "", "לפי קטעים"));
+      o.pass.forEach(function (p) {
+        var card = el("div", "pass"), en = el("div", "en", p.s); en.dir = "ltr"; en.lang = "en";
+        card.appendChild(en);
+        card.appendChild(el("div", "meta", p.tries + (p.tries === 1 ? " ניסיון" : " ניסיונות") + " · הכי טוב " + "★".repeat(p.best) + "☆".repeat(3 - p.best) +
+          " · בפעם האחרונה " + p.last.good + " מתוך " + p.last.n + (p.last.done ? "" : ", לא עד הסוף")));
+        var h = hard(p.last);
+        if (h.length) {
+          var bad = el("div", "bad", "התקשתה ב: "), b = el("bdi", "", h.join(", ")); b.dir = "ltr";
+          bad.appendChild(b); card.appendChild(bad);
+        }
+        box.appendChild(card);
+      });
+
+      var copy = el("button", "btn small", "העתקת הדוח"), text = reportText(child.name, label, o);
+      copy.addEventListener("click", function () {
+        var ok = function () { copy.textContent = "הועתק"; }, no = function () { copy.textContent = "לא הצלחתי להעתיק"; };
+        try { navigator.clipboard.writeText(text).then(ok, no); } catch (e) { no(); }
+      });
+      var crow = el("div", "row"); crow.appendChild(copy); box.appendChild(crow);
+    }
+
+    var del = el("button", "btn small danger", "מחיקת " + child.name + " וכל הנתונים שלה");
+    del.addEventListener("click", function () {
+      if (listening) { return; }
+      if (!armed) { armed = true; del.textContent = "בטוח? לחיצה נוספת מוחקת לתמיד"; return; }
+      try { localStorage.removeItem(LS_LOG + child.id); } catch (e) { /* storage blocked */ }
+      profiles = profiles.filter(function (p) { return p.id !== child.id; });
+      if (me && me.id === child.id) { abandon(); dropRec(); me = null; log = []; stars = {}; verdict = null; showChooser(true); }
+      else if (!$("chooser").hidden) { showChooser(true); }
+      saveProfiles(); repWho = null; render(); drawReport();
+    });
+    var drow = el("div", "row"); drow.appendChild(del); box.appendChild(drow);
+  }
+  $("reportBox").addEventListener("toggle", function () { if (this.open) { repWho = me ? me.id : null; drawReport(); } });
+
   // ---------- parent: other passages, kept on this device ----------
   function parseEditor(text) {
     return text.split(/\r?\n/)
@@ -524,7 +813,14 @@ textarea {
   try {
     showHe = localStorage.getItem(LS_GLOSS) !== "0"; $("glossToggle").checked = showHe;
     var at = parseInt(localStorage.getItem(LS_IDX), 10); if (at > 0) { idx = at; }
+    var ps = JSON.parse(localStorage.getItem(LS_PROF) || "[]"), cur = localStorage.getItem(LS_CUR);
+    if (Array.isArray(ps)) {
+      profiles = ps.filter(function (p) { return p && typeof p.id === "string" && typeof p.name === "string"; }).slice(0, 8);
+      me = profiles.filter(function (p) { return p.id === cur; })[0] || null;
+      if (me) { log = readLog(me.id); }
+    }
   } catch (e) { /* storage blocked */ }
+  if (!me) { showChooser(true); }
 
   if (!SR) {
     $("envNote").textContent = "הדפדפן הזה לא יודע להקשיב לקריאה. באייפד ובאייפון צריך לפתוח את הדף ב-Safari. אפשר עדיין להשמיע את הקטעים.";
