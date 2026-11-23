@@ -136,6 +136,8 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
 .chip { border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 6px 12px; font-size: .95rem; cursor: pointer; }
 .chip small { color: var(--miss); font-family: var(--ui); }
 .danger { color: var(--miss); border-color: color-mix(in srgb, var(--miss) 45%, var(--line)); }
+.srcbar { justify-content: center; gap: 8px; }
+#srcHint { text-align: center; }
 </style>
 </head>
 <body>
@@ -157,6 +159,8 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   </section>
 
   <div id="practice">
+  <div class="row srcbar" id="sources"></div>
+  <p class="hintline" id="srcHint" hidden></p>
   <div class="sentence" id="sentence" dir="ltr" lang="en"></div>
   <div class="hintrow">
     <span id="wordHint">לחיצה על מילה משמיעה אותה</span>
@@ -275,6 +279,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   // Who is reading, and what each girl has read. Kept on this device only: nothing here is ever sent anywhere.
   var LS_PROF = "reading-ipad-profiles", LS_CUR = "reading-ipad-current", LS_LOG = "reading-ipad-log-";
   var profiles = [], me = null, log = [], listenT0 = 0;
+  var bank = null, source = "teacher", wantSrc = "teacher", LS_SRC = "reading-ipad-source";
 
   function readLog(id) {
     try { var l = JSON.parse(localStorage.getItem(LS_LOG + id) || "[]"); return Array.isArray(l) ? l : []; } catch (e) { return []; }
@@ -345,6 +350,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     $("count").textContent = sentences.length ? "קטע " + (idx + 1) + " מתוך " + sentences.length : "";
     $("localBadge").hidden = !isLocal;
     $("whoBtn").hidden = !me; $("whoBtn").textContent = me ? me.name + " ▾" : "";
+    drawSources();
     $("prevBtn").disabled = idx === 0 || listening;
     $("nextBtn").disabled = idx >= sentences.length - 1 || listening;
 
@@ -592,6 +598,78 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     render();
   });
 
+  // ---------- what to read: the teacher's passages, a level from the bank, or a set picked for this girl ----------
+  function soundsFor(s) { return tokens(s).map(function (t) { return (t.key && bank.sounds[clean(t.raw)]) || ""; }); }
+  function hardWords(max) {       // the words she misread, got stuck on or asked to hear, in her recent tries
+    var c = {};
+    log.slice(-80).forEach(function (r) { hard(r).forEach(function (w) { c[w] = (c[w] || 0) + 1; }); });
+    return Object.keys(c).sort(function (a, b) { return c[b] - c[a]; }).slice(0, max);
+  }
+  function herLevel() {           // one above the highest level she reads well: 4+ passages finished, 85% of words right
+    var lv = 1;
+    bank.levels.forEach(function (L) {
+      var g = 0, n = 0, k = 0;
+      log.forEach(function (r) { if (r.done && L.passages.indexOf(r.s) >= 0) { g += r.good; n += r.n; k++; } });
+      if (k >= 4 && n && g / n >= 0.85) { lv = Math.max(lv, Math.min(bank.levels.length, L.n + 1)); }
+      // and never below what she is reading these days: that level if she gets 60% of it, else one below
+      var rg = 0, rn = 0;
+      log.slice(-12).forEach(function (r) { if (L.passages.indexOf(r.s) >= 0) { rg += r.good; rn += r.n; } });
+      if (rn) { lv = Math.max(lv, rg / rn >= 0.6 ? L.n : L.n - 1); }
+    });
+    return lv;
+  }
+  function bankPick() {
+    var hw = hardWords(12), lv = herLevel(), top = bank.levels.length, best = {}, all = [], out = [], seen = {};
+    log.forEach(function (r) { if ((r.st || 0) > (best[r.s] || 0)) { best[r.s] = r.st; } });
+    bank.levels.forEach(function (L) { L.passages.forEach(function (p) { all.push({ s: p, n: L.n }); }); });
+    var push = function (x) { if (!seen[x.s] && out.length < 8) { seen[x.s] = 1; out.push(x); } };
+    // passages that hold her hard words, up to one level above hers, most of them first
+    all.filter(function (x) { return x.n <= lv + 1; }).map(function (x) {
+      var keys = tokens(x.s).map(function (t) { return clean(t.raw); });
+      return { s: x.s, n: x.n, hits: hw.filter(function (w) { return keys.indexOf(w) >= 0; }).length };
+    }).filter(function (x) { return x.hits > 0; })
+      .sort(function (a, b) { return b.hits - a.hits || a.n - b.n; }).slice(0, 5).forEach(push);
+    // then passages at her level she has not yet read without a mistake, then the next level
+    all.filter(function (x) { return x.n === lv && (best[x.s] || 0) < 3; }).forEach(push);
+    all.filter(function (x) { return x.n === Math.min(lv + 1, top); }).forEach(push);
+    all.filter(function (x) { return x.n === lv; }).forEach(push);
+    return { list: out.sort(function (a, b) { return a.n - b.n; }).map(function (x) { return x.s; }), words: hw, level: lv };
+  }
+  var mineInfo = null;
+  function saveSource() { try { localStorage.setItem(LS_SRC, source); } catch (e) { /* storage blocked */ } }
+  function setSource(src, keepIdx) {
+    if (listening) { return; }
+    if (src !== "teacher" && !bank) { src = "teacher"; }
+    if (src === "mine" && !me) { src = "teacher"; }
+    var L = bank && bank.levels.filter(function (l) { return "L" + l.n === src; })[0];
+    if (src !== "teacher" && src !== "mine" && !L) { src = "teacher"; }
+    source = src; saveSource(); showNote("");
+    if (!keepIdx) { idx = 0; }
+    if (src === "teacher") { choose(); }
+    else if (src === "mine") { mineInfo = bankPick(); use(mineInfo.list, mineInfo.list.map(soundsFor), false); }
+    else { use(L.passages, L.passages.map(soundsFor), false); }
+  }
+  function drawSources() {
+    var bar = $("sources"), hint = $("srcHint"), items = [["teacher", "מהמורה"]], text = "";
+    bar.textContent = "";
+    if (bank) {
+      bank.levels.forEach(function (L) { items.push(["L" + L.n, "רמה " + L.n]); if ("L" + L.n === source) { text = L.title; } });
+      if (me) { items.push(["mine", "מותאם לי"]); }
+    }
+    if (source === "mine" && mineInfo) {
+      text = mineInfo.words.length ? "נבחרו בשבילך לפי המילים שהיו קשות: " + mineInfo.words.slice(0, 6).join(", ")
+        : "עוד אין מספיק קריאות כדי להתאים, אז מתחילים מרמה " + mineInfo.level + ".";
+    }
+    bar.hidden = items.length < 2;
+    items.forEach(function (x) {
+      var b = el("button", "btn small" + (x[0] === source ? " on" : ""), x[1]);
+      b.disabled = listening;
+      b.addEventListener("click", function () { setSource(x[0]); });
+      bar.appendChild(b);
+    });
+    hint.textContent = text; hint.hidden = !text;
+  }
+
   // ---------- who is reading ----------
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -614,6 +692,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     me = p; log = readLog(p.id); saveProfiles();
     stars = bestStars(); attempt = null; verdict = null; showNote("");
     showChooser(false); render();
+    if (source === "mine") { setSource("mine"); }      // the picked set is hers, so pick it again for this girl
     if ($("reportBox").open) { repWho = p.id; drawReport(); }
   }
   $("whoBtn").addEventListener("click", function () {
@@ -764,7 +843,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
       if (!armed) { armed = true; del.textContent = "בטוח? לחיצה נוספת מוחקת לתמיד"; return; }
       try { localStorage.removeItem(LS_LOG + child.id); } catch (e) { /* storage blocked */ }
       profiles = profiles.filter(function (p) { return p.id !== child.id; });
-      if (me && me.id === child.id) { abandon(); dropRec(); me = null; log = []; stars = {}; verdict = null; showChooser(true); }
+      if (me && me.id === child.id) { abandon(); dropRec(); me = null; log = []; stars = {}; verdict = null; if (source === "mine") { setSource("teacher"); } showChooser(true); }
       else if (!$("chooser").hidden) { showChooser(true); }
       saveProfiles(); repWho = null; render(); drawReport();
     });
@@ -789,6 +868,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     if (listening) { return; }
     try { localStorage.setItem(LS_LOCAL, JSON.stringify({ sentences: list, savedAt: new Date().toISOString() })); }
     catch (e) { $("saveStatus").textContent = "לא הצלחתי לשמור במכשיר הזה."; return; }
+    source = "teacher"; saveSource();
     idx = 0; use(list, [], true);
     $("resetBtn").hidden = false;
     $("saveStatus").textContent = "נשמרו " + list.length + " קטעים במכשיר הזה.";
@@ -796,6 +876,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   $("resetBtn").addEventListener("click", function () {
     if (listening) { return; }
     try { localStorage.removeItem(LS_LOCAL); } catch (e) { /* storage blocked */ }
+    source = "teacher"; saveSource();
     idx = 0; use(teacher.sentences, teacher.glosses, false);
     $("editor").value = ""; $("resetBtn").hidden = true;
     $("saveStatus").textContent = "חזרנו לקטעים מהמורה.";
@@ -840,11 +921,19 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
         updatedAt: String(d.updatedAt || "")
       };
     }
-    choose();
+    if (source === "teacher") { choose(); }
   }, function () {
-    choose();
+    if (source === "teacher") { choose(); }
     if (!sentences.length) { showNote("לא הצלחתי לטעון את הקטעים. בדקו את החיבור לאינטרנט ורעננו את הדף."); }
   });
+  try { wantSrc = localStorage.getItem(LS_SRC) || "teacher"; } catch (e) { /* storage blocked */ }
+  fetch("bank.json", { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (b) {
+    if (!b || !Array.isArray(b.levels) || !b.sounds) { return; }
+    b.levels = b.levels.filter(function (L) { return L && L.n && Array.isArray(L.passages) && L.passages.length; });
+    if (!b.levels.length) { return; }
+    bank = b;
+    if (wantSrc !== "teacher" && !listening && !attempt) { setSource(wantSrc, true); } else { render(); }
+  }, function () { /* no bank: only the teacher's passages */ });
 })();
 </script>
 </body>
