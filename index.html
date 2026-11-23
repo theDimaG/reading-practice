@@ -325,7 +325,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   <section id="dash" hidden>
     <div class="dashHead">
       <h2>לוח בקרה</h2>
-      <button class="btn small" id="dashRefresh" type="button">רענון</button>
+      <span class="row"><span class="hintline" id="dashStamp"></span><button class="btn small" id="dashRefresh" type="button">רענון</button></span>
     </div>
     <div class="row" id="dashPeriod"></div>
     <div id="dashBody"></div>
@@ -1561,7 +1561,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     var mrow = el("div", "row"); mrow.appendChild(more); card.appendChild(mrow);
     return card;
   }
-  function showDetail(k, all) {
+  function showDetail(k, all, quiet) {
     var d = $("dashDetail"), from = periodFrom(); d.textContent = "";
     var head = el("div", "dashHead"), close = el("button", "btn small", "סגירה");
     head.appendChild(el("h2", "", "דוח מלא: " + k.name + " (" + periodLabel() + ")"));
@@ -1569,7 +1569,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     head.appendChild(close); d.appendChild(head);
     repDays = dashDays;
     fillReport(d, k, periodLabel(), all.filter(function (r) { return r.t >= from; }));
-    d.scrollIntoView({ block: "start", behavior: "smooth" });
+    if (!quiet) { d.scrollIntoView({ block: "start", behavior: "smooth" }); }
   }
   var dashData = [];
   function drawDashCards() {
@@ -1577,7 +1577,13 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     var grid = el("div", "dashGrid"); body.appendChild(grid);
     dashData.forEach(function (x) { grid.appendChild(kidCard(x.k, x.rows)); });
   }
-  function drawDash() {
+  var dashSig = "";
+  function stamp() {
+    var n = new Date();
+    $("dashStamp").textContent = "עודכן " + n.getHours() + ":" + String(n.getMinutes()).padStart(2, "0");
+  }
+  // quiet: an automatic refresh, which keeps the screen still and redraws only when something changed
+  function drawDash(quiet) {
     var seq = ++dashSeq, per = $("dashPeriod"), body = $("dashBody");
     per.textContent = "";
     [[1, "היום"], [7, "7 ימים"], [30, "30 ימים"], [0, "הכול"]].forEach(function (x) {
@@ -1596,23 +1602,34 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
       e.appendChild(ol); body.appendChild(e);
       return;
     }
-    body.textContent = ""; body.appendChild(el("p", "hintline", "טוען…"));
+    if (!quiet) { body.textContent = ""; body.appendChild(el("p", "hintline", "טוען…")); }
     Promise.all(kids.map(function (k) {
       return tryRows(k).then(function (rows) { return { k: k, rows: rows }; }, function () { return { k: k, rows: null }; });
     })).then(function (list) {
       if (seq !== dashSeq) { return; }
-      dashData = list; drawDashCards();
+      var sig = dashDays + "|" + list.map(function (x) {
+        var r = x.rows; return x.k.id + ":" + (r ? r.length + ":" + (r.length ? r[r.length - 1].t : 0) : "x");
+      }).join(",");
+      stamp();
+      if (quiet && sig === dashSig) { return; }
+      dashSig = sig; dashData = list; drawDashCards();
       var open = list.filter(function (x) { return x.k.id === dashOpen && x.rows; })[0];
-      if (open) { showDetail(open.k, open.rows); } else { dashOpen = null; $("dashDetail").textContent = ""; }
+      if (open) { showDetail(open.k, open.rows, quiet); } else { dashOpen = null; $("dashDetail").textContent = ""; }
     });
   }
-  $("dashRefresh").addEventListener("click", function () {
+  function refreshDash(quiet) {
     if (!sb || !isParent()) { return; }
+    var go = function () { drawDash(quiet); };
     sb.rpc("my_children").then(function (c) {
       if (c && !c.error) { kids = (c.data || []).map(function (x) { return { id: "c_" + x.child_id, cid: x.child_id, name: String(x.display_name || "ילדה").slice(0, 20) }; }); }
-      drawDash();
-    }, drawDash);
-  });
+      go();
+    }, go);
+  }
+  $("dashRefresh").addEventListener("click", function () { refreshDash(false); });
+  // while the dashboard is on screen: refresh every minute, and at once when coming back to it
+  function dashShown() { return isParent() && !$("dash").hidden && document.visibilityState !== "hidden"; }
+  setInterval(function () { if (dashShown()) { refreshDash(true); } }, 60000);
+  document.addEventListener("visibilitychange", function () { if (dashShown()) { refreshDash(true); } });
 
   // ---------- parent: other passages, kept on this device ----------
   function parseEditor(text) {
