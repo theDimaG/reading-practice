@@ -176,8 +176,11 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
 .dashEmpty ol { margin: 0; padding-inline-start: 20px; display: flex; flex-direction: column; gap: 4px; }
 .dashLinkBox { border-top: 1px solid var(--line); padding-top: 14px; display: flex; flex-direction: column; gap: 8px; }
 #dashDetail:empty { display: none; }
-#acctNote { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; border-style: solid; border-color: var(--accent); color: var(--ink); }
-#acctNote span { min-width: 0; flex: 1 1 220px; }
+#resetBox { display: flex; flex-direction: column; gap: 10px; border-style: solid; border-color: var(--accent); color: var(--ink); }
+#resetBox h3 { margin: 0; font-size: 1rem; }
+#resetForm { margin: 0; }
+#acctNote, #moveNote { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; border-style: solid; border-color: var(--accent); color: var(--ink); }
+#acctNote span, #moveNote span { min-width: 0; flex: 1 1 220px; }
 #cloudCode bdi { font-family: ui-monospace, Menlo, monospace; font-size: 1.05rem; color: var(--ink); letter-spacing: .06em; }
 .srcbar { justify-content: center; gap: 8px; }
 #srcHint { text-align: center; }
@@ -190,6 +193,15 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     <span class="row"><span class="badge" id="localBadge" hidden>קטעים שנשמרו במכשיר הזה</span> <span class="count" id="count"></span>
       <button class="btn small" id="whoBtn" type="button" hidden></button></span>
   </header>
+
+  <div class="note" id="resetBox" hidden>
+    <h3>בחירת סיסמה חדשה</h3>
+    <form class="row" id="resetForm">
+      <input type="password" id="resetPass" dir="ltr" placeholder="סיסמה חדשה" autocomplete="new-password" required>
+      <button class="btn" id="resetGo" type="submit">שמירת הסיסמה</button>
+    </form>
+    <p class="hintline" id="resetStatus" role="status"></p>
+  </div>
 
   <div class="note" id="importBox" hidden>
     <p class="hintline" id="importText"></p>
@@ -232,7 +244,10 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
           <button class="btn" id="cloudGo" type="submit">כניסה</button>
         </div>
         <label class="toggle" id="cloudParentWrap" hidden><input type="checkbox" id="cloudParent"> חשבון הורה: לוח בקרה על הבנות, בלי מסך קריאה</label>
-        <div class="row"><button class="btn small" id="cloudNew" type="button">אין לי חשבון עדיין</button></div>
+        <div class="row">
+          <button class="btn small" id="cloudNew" type="button">אין לי חשבון עדיין</button>
+          <button class="btn small" id="cloudForgot" type="button">שכחתי את הסיסמה</button>
+        </div>
       </form>
       <p class="hintline" id="cloudStatus" role="status"></p>
     </div>
@@ -242,6 +257,13 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   <div class="note" id="acctNote" hidden>
     <span id="acctText"></span>
     <button class="btn small" id="acctBtn" type="button">פתיחת חשבון</button>
+  </div>
+  <div class="note" id="moveNote" hidden>
+    <span id="moveText"></span>
+    <span class="row" style="flex: 0 0 auto">
+      <button class="btn small" id="moveBtn" type="button">העברה לחשבון</button>
+      <button class="btn small" id="moveNo" type="button">לא עכשיו</button>
+    </span>
   </div>
   <div class="row srcbar" id="sources"></div>
   <p class="hintline" id="srcHint" hidden></p>
@@ -286,6 +308,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     <div class="hintline" id="drillTip"></div>
     <div class="actions">
       <button class="btn" id="drillHear" type="button">השמיעי לאט</button>
+      <button class="btn" id="drillSpell" type="button">אות אחר אות</button>
       <button class="btn primary" id="drillSay" type="button">נסי לומר</button>
       <button class="btn" id="drillClose" type="button">סגירה</button>
     </div>
@@ -343,7 +366,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
 (function () {
   "use strict";
   var LS_LOCAL = "reading-ipad-local", LS_GLOSS = "reading-ipad-show-hebrew", LS_IDX = "reading-ipad-index";
-  var PASSAGE_RATE = 0.7, WORD_RATE = 0.5;     // a single word: half the device voice's normal pace
+  var PASSAGE_RATE = 0.7, WORD_RATE = 0.4;     // a single word: well under half the device voice's normal pace
   var $ = function (id) { return document.getElementById(id); };
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   var hasSynth = !!(window.speechSynthesis && window.SpeechSynthesisUtterance);
@@ -721,10 +744,11 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   function synthSay(text, rate) {
     return new Promise(function (done) {
       try {
-        var u = new SpeechSynthesisUtterance(text), v = usVoice();
+        var said = /\s/.test(text) || text.length === 1 ? text : text.replace(/[.,!?;:]+$/, "") + ".";
+        var u = new SpeechSynthesisUtterance(said), v = usVoice();
         u.lang = "en-US"; if (v) { u.voice = v; }
         u.rate = rate; u.onend = done; u.onerror = done;
-        setTimeout(done, 2500 + text.length * 220);
+        setTimeout(done, 3000 + text.length * 400);
         window.speechSynthesis.speak(u);
       } catch (err) { done(); }
     });
@@ -917,6 +941,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     $("drillTip").textContent = tipFor(drill.word);
     $("drillSay").hidden = !(SR);
     $("drillSay").disabled = drillBusy; $("drillHear").disabled = drillBusy;
+    $("drillSpell").hidden = !hasSynth; $("drillSpell").disabled = drillBusy;
     $("drillSay").lastChild.textContent = drillBusy ? "מקשיבה…" : "נסי לומר";
     $("drillResult").textContent = drill.result || "";
     $("drillResult").style.color = drill.ok === 2 ? "var(--good)" : drill.ok === 1 ? "var(--ink)" : "var(--miss)";
@@ -935,7 +960,30 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
       : !shown ? "לא שמעתי כלום. נסי שוב, קרוב יותר למיקרופון."
       : (close ? "כמעט. " : "") + "שמעתי: " + shown + ". הקשיבי שוב ונסי עוד פעם.";
   }
-  $("drillHear").addEventListener("click", function () { if (drill && !listening && !drillBusy) { speak(drill.word, WORD_RATE); } });
+  // Practising one word: say it twice, slowly, with a pause; or spell it letter by letter and then say it.
+  function sayChain(parts) {
+    if (!hasSynth) { return; }
+    stopSynth();
+    var run = synthRun, i = 0;
+    talking = true; render();
+    (function next() {
+      if (run !== synthRun) { return; }
+      if (i >= parts.length) { talking = false; render(); return; }
+      var p = parts[i++];
+      synthSay(p.t, p.r).then(function () { setTimeout(next, p.gap || 0); });
+    })();
+  }
+  $("drillHear").addEventListener("click", function () {
+    if (!drill || listening || drillBusy) { return; }
+    sayChain([{ t: drill.word, r: WORD_RATE, gap: 700 }, { t: drill.word, r: WORD_RATE }]);
+  });
+  $("drillSpell").addEventListener("click", function () {
+    if (!drill || listening || drillBusy) { return; }
+    var parts = drill.word.replace(/[^A-Za-z]/g, "").split("").map(function (ch) { return { t: ch.toUpperCase(), r: 0.6, gap: 250 }; });
+    parts.push({ t: drill.word, r: WORD_RATE, gap: 0 });
+    if (parts.length > 1) { parts[parts.length - 2].gap = 600; }
+    sayChain(parts);
+  });
   $("drillClose").addEventListener("click", function () { if (!drillBusy) { drill = null; render(); } });
   // The single word is heard on its own, with the recogniser's other guesses, so a word that
   // the long reading keeps missing gets a fairer hearing here.
@@ -966,6 +1014,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   // The page has a database of its own (supabase/schema.sql). With an account, every try is stored
   // there, so the report follows the girl to any device, and a parent account that she was linked to
   // can read her tries. Without an account, everything stays on this device as before.
+  var arrivedRecovery = /[#&]type=recovery/.test(location.hash || "");
   var CLOUD = window.READING_CLOUD || {}, sb = null, cloudUser = null, kids = [], LS_OUT = "reading-ipad-outbox-";
   if (CLOUD.url && CLOUD.key && window.supabase && window.supabase.createClient) {
     try { sb = window.supabase.createClient(CLOUD.url, CLOUD.key); } catch (e) { sb = null; }
@@ -989,7 +1038,10 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   }
   function cloudSave(who, rec) {            // a try that cannot be sent now waits on the device and is sent next time
     var row = toRow(rec), uid = who.uid;
-    var keep = function () { outbox(uid, outbox(uid).concat([row])); };
+    var keep = function () {
+      outbox(uid, outbox(uid).concat([row]));
+      showNote("הקריאה לא נשמרה בחשבון כרגע. היא שמורה במכשיר ותישלח בפעם הבאה שנכנסים.");
+    };
     sb.from("reading_tries").insert(row).then(function (r) { if (r && r.error) { keep(); } }, keep);
   }
   function flushOutbox(uid) {
@@ -998,6 +1050,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     sb.from("reading_tries").insert(rows).then(function (r) { if (!r || !r.error) { outbox(uid, []); } }, function () { /* still offline */ });
   }
   function cloudEnter(user) {
+    var prevLocal = me && !me.cloud ? me : null;      // the name she was reading under on this device, if any
     cloudUser = user;
     $("cloudStatus").textContent = "טוען את החשבון…";
     newMode = false;
@@ -1012,7 +1065,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
       abandon();
       me = { id: "u_" + user.id, uid: user.id, name: String(name).slice(0, 20), cloud: true, parent: !!(user.user_metadata && user.user_metadata.is_parent), code: String((res[0] && res[0].data && res[0].data.link_code) || "") };
       log = ((res[1] && res[1].data) || []).map(fromRow).reverse().concat(waiting);
-      saveProfiles(); loadGlossPref(); flushOutbox(user.id);
+      saveProfiles(); loadGlossPref(); flushOutbox(user.id); offerMove(prevLocal);
       stars = bestStars(); attempt = null; verdict = null; showNote("");
       $("cloudStatus").textContent = res[1] && res[1].error ? "נכנסת, אבל הדוחות עדיין לא זמינים בחשבון. קריאות חדשות יישמרו במכשיר עד שזה יסודר." : "";
       showChooser(false); render();
@@ -1028,7 +1081,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     $("cloudBox").hidden = !sb;
     if (!sb) { return; }
     $("cloudIn").hidden = !cloudUser; $("cloudForm").hidden = !!cloudUser;
-    $("cloudName").hidden = !newMode; $("cloudParentWrap").hidden = !newMode;
+    $("cloudName").hidden = !newMode; $("cloudParentWrap").hidden = !newMode; $("cloudForgot").hidden = newMode;
     $("cloudGo").textContent = newMode ? "פתיחת חשבון" : "כניסה";
     $("cloudNew").textContent = newMode ? "יש לי כבר חשבון" : "אין לי חשבון עדיין";
     $("cloudPass").autocomplete = newMode ? "new-password" : "current-password";
@@ -1044,6 +1097,36 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     $("linkForm").hidden = !mine;
     $("cloudKids").textContent = mine && kids.length ? "מקושרות לחשבון הזה: " + kids.map(function (k) { return k.name; }).join(", ") : "";
   }
+  // Forgotten password: a reset link by email, which comes back here to choose a new one.
+  $("cloudForgot").addEventListener("click", function () {
+    var email = $("cloudEmail").value.trim(), st = $("cloudStatus"), b = this;
+    if (!sb) { return; }
+    if (!email) { st.textContent = "כתבו קודם את האימייל של החשבון, ואז לחצו שוב על \"שכחתי את הסיסמה\"."; $("cloudEmail").focus(); return; }
+    b.disabled = true; st.textContent = "שולחים…";
+    sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }).then(function (r) {
+      b.disabled = false;
+      st.textContent = r && r.error ? "לא הצלחתי לשלוח מייל כרגע. נסו שוב בעוד כמה דקות."
+        : "אם יש חשבון עם האימייל הזה, נשלח אליו מייל עם קישור. פותחים את הקישור, וחוזרים לכאן לבחור סיסמה חדשה.";
+    }, function () { b.disabled = false; st.textContent = "לא הצלחתי לשלוח. בדקו את החיבור לאינטרנט."; });
+  });
+  function showReset() { $("resetBox").hidden = false; $("resetStatus").textContent = ""; $("resetPass").focus(); }
+  if (sb && sb.auth.onAuthStateChange) {
+    sb.auth.onAuthStateChange(function (ev) { if (ev === "PASSWORD_RECOVERY") { showReset(); } });
+  }
+  $("resetForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var pass = $("resetPass").value, st = $("resetStatus");
+    if (!sb) { return; }
+    if (pass.length < 8) { st.textContent = "הסיסמה צריכה להיות באורך 8 תווים לפחות."; return; }
+    $("resetGo").disabled = true; st.textContent = "שומרים…";
+    sb.auth.updateUser({ password: pass }).then(function (r) {
+      $("resetGo").disabled = false;
+      if (!r || r.error) { st.textContent = "לא הצלחתי לשמור. אם הקישור מהמייל ישן, בקשו קישור חדש."; return; }
+      $("resetPass").value = ""; $("resetBox").hidden = true;
+      showNote("הסיסמה עודכנה.");
+      if (!me && r.data && r.data.user) { cloudEnter(r.data.user); }
+    }, function () { $("resetGo").disabled = false; st.textContent = "לא הצלחתי לשמור. בדקו את החיבור לאינטרנט."; });
+  });
   $("cloudNew").addEventListener("click", function () { newMode = !newMode; $("cloudStatus").textContent = ""; drawCloud(); });
   $("cloudForm").addEventListener("submit", function (e) {
     e.preventDefault();
@@ -1109,9 +1192,43 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     var done = function () {
       cloudUser = null; kids = [];
       if (me && me.cloud) { abandon(); me = null; log = []; stars = {}; verdict = null; saveProfiles(); if (source === "mine") { setSource("teacher"); } }
+      $("moveNote").hidden = true; moveFrom = null;
       $("cloudStatus").textContent = ""; showChooser(true); render();
     };
     sb.auth.signOut().then(done, done);
+  });
+
+  // Readings kept on this device under a local name, before she signed in: offer to move them to her account.
+  var moveFrom = null;
+  function movedKey(p) { return LS_LOG + p.id + "-moved"; }
+  function offerMove(p) {
+    moveFrom = null; $("moveNote").hidden = true;
+    if (!p || !me || !me.cloud) { return; }
+    var rows = readLog(p.id), done = null;
+    try { done = localStorage.getItem(movedKey(p)); } catch (e) { /* storage blocked */ }
+    if (!rows.length || done) { return; }
+    moveFrom = { p: p, rows: rows };
+    $("moveText").textContent = "במכשיר הזה שמורות " + rows.length + (rows.length === 1 ? " קריאה" : " קריאות") + " של " + p.name +
+      " מלפני הכניסה לחשבון. להעביר אותן לחשבון של " + me.name + ", כדי שיופיעו בדוח?";
+    $("moveNote").hidden = false;
+  }
+  $("moveBtn").addEventListener("click", function () {
+    var m = moveFrom, btn = this;
+    if (!m || !sb || !me || !me.cloud) { return; }
+    btn.disabled = true; $("moveText").textContent = "מעבירים…";
+    sb.from("reading_tries").insert(m.rows.map(toRow)).then(function (r) {
+      btn.disabled = false;
+      if (!r || r.error) { $("moveText").textContent = "לא הצלחתי להעביר את הקריאות. אפשר לנסות שוב."; return; }
+      try { localStorage.setItem(movedKey(m.p), "moved:" + me.uid); } catch (e) { /* storage blocked */ }
+      log = m.rows.concat(log).sort(function (a, b) { return a.t - b.t; });
+      stars = bestStars(); moveFrom = null; $("moveNote").hidden = true;
+      showNote(m.rows.length + (m.rows.length === 1 ? " קריאה הועברה" : " קריאות הועברו") + " לחשבון.");
+      render();
+    }, function () { btn.disabled = false; $("moveText").textContent = "לא הצלחתי להעביר את הקריאות. בדקו את החיבור לאינטרנט."; });
+  });
+  $("moveNo").addEventListener("click", function () {
+    if (moveFrom) { try { localStorage.setItem(movedKey(moveFrom.p), "skipped"); } catch (e) { /* storage blocked */ } }
+    moveFrom = null; $("moveNote").hidden = true;
   });
 
   $("acctBtn").addEventListener("click", function () {
@@ -1558,6 +1675,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     sb.auth.getSession().then(function (r) {
       var s = r && r.data && r.data.session;
       clearTimeout(late);
+      if (s && s.user && arrivedRecovery) { showReset(); }
       if (s && s.user) { cloudUser = s.user; if (!me) { return cloudEnter(s.user); } }
       if (!me) { showChooser(true); } else if (!$("chooser").hidden) { drawCloud(); }
     }, function () { clearTimeout(late); if (!me) { showChooser(true); } });
