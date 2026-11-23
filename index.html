@@ -151,6 +151,31 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
 #cloudBox h3 { margin: 0; font-size: 1rem; }
 #cloudForm, #cloudIn { margin: 0; display: flex; flex-direction: column; gap: 10px; }
 #linkForm { margin: 0; }
+#dash { display: flex; flex-direction: column; gap: 16px; }
+.dashHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.dashHead h2 { margin: 0; font-size: 1.25rem; }
+.dashGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.kid { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.kidTop { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.kidTop h3 { margin: 0; font-size: 1.15rem; }
+.pill { font-size: .82rem; border-radius: 999px; padding: 3px 10px; background: var(--good-bg); color: var(--good); white-space: nowrap; }
+.pill.warn { background: var(--miss-bg); color: var(--miss); }
+.kid .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.kid .tile { background: var(--bg); }
+.tile .trend { display: block; font-size: .8rem; color: var(--muted); margin-top: 2px; }
+.tile .trend.up { color: var(--good); }
+.tile .trend.down { color: var(--miss); }
+.bars { display: flex; align-items: flex-end; gap: 3px; height: 64px; border-bottom: 1px solid var(--line); }
+.bars i { flex: 1; min-width: 0; background: var(--accent); border-radius: 3px 3px 0 0; }
+.bars i.zero { background: var(--line); height: 3px !important; }
+.barsLabel { display: flex; justify-content: space-between; color: var(--muted); font-size: .78rem; margin-top: 4px; }
+.kidMeta { color: var(--muted); font-size: .92rem; overflow-wrap: anywhere; }
+.kidMeta bdi { font-family: var(--read); color: var(--ink); }
+.dashEmpty { background: var(--surface); border: 1px dashed var(--line); border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 8px; }
+.dashEmpty h3, .dashLinkBox h3 { margin: 0; font-size: 1rem; }
+.dashEmpty ol { margin: 0; padding-inline-start: 20px; display: flex; flex-direction: column; gap: 4px; }
+.dashLinkBox { border-top: 1px solid var(--line); padding-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+#dashDetail:empty { display: none; }
 #acctNote { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; border-style: solid; border-color: var(--accent); color: var(--ink); }
 #acctNote span { min-width: 0; flex: 1 1 220px; }
 #cloudCode bdi { font-family: ui-monospace, Menlo, monospace; font-size: 1.05rem; color: var(--ink); letter-spacing: .06em; }
@@ -191,6 +216,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
           <button class="btn name" id="cloudMe" type="button"></button>
           <button class="btn small" id="cloudOut" type="button">התנתקות</button>
         </div>
+        <label class="toggle" id="parentWrap" hidden><input type="checkbox" id="parentToggle"> חשבון הורה: לוח בקרה במקום מסך קריאה</label>
         <p class="hintline" id="cloudCode"></p>
         <form class="row" id="linkForm">
           <input type="text" id="linkCode" dir="ltr" maxlength="12" placeholder="קוד של ילדה" autocomplete="off">
@@ -205,6 +231,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
           <input type="password" id="cloudPass" dir="ltr" placeholder="סיסמה" autocomplete="current-password" required>
           <button class="btn" id="cloudGo" type="submit">כניסה</button>
         </div>
+        <label class="toggle" id="cloudParentWrap" hidden><input type="checkbox" id="cloudParent"> חשבון הורה: לוח בקרה על הבנות, בלי מסך קריאה</label>
         <div class="row"><button class="btn small" id="cloudNew" type="button">אין לי חשבון עדיין</button></div>
       </form>
       <p class="hintline" id="cloudStatus" role="status"></p>
@@ -271,6 +298,25 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     <button class="btn" id="nextBtn" type="button">הבא</button>
   </div>
   </div>
+
+  <section id="dash" hidden>
+    <div class="dashHead">
+      <h2>לוח בקרה</h2>
+      <button class="btn small" id="dashRefresh" type="button">רענון</button>
+    </div>
+    <div class="row" id="dashPeriod"></div>
+    <div id="dashBody"></div>
+    <div class="report" id="dashDetail"></div>
+    <div class="dashLinkBox">
+      <h3>קישור ילדה לחשבון</h3>
+      <p class="hintline">את הקוד רואים במכשיר של הילדה, כשהיא מחוברת לחשבון שלה: לוחצים על השם שלה למעלה, והקוד מופיע במסך שנפתח.</p>
+      <form class="row" id="dashLink">
+        <input type="text" id="dashCode" dir="ltr" maxlength="12" placeholder="קוד של ילדה" autocomplete="off">
+        <button class="btn small" type="submit">קישור</button>
+      </form>
+      <p class="hintline" id="dashStatus" role="status"></p>
+    </div>
+  </section>
 
   <details id="reportBox">
     <summary>להורים: דוח קריאה</summary>
@@ -457,9 +503,10 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
 
   // ---------- rendering ----------
   function render() {
+    applyMode();
     toks = tokens(sentences[idx] || "");
     $("count").textContent = sentences.length ? "קטע " + (idx + 1) + " מתוך " + sentences.length : "";
-    $("localBadge").hidden = !isLocal;
+    $("localBadge").hidden = !isLocal || isParent();
     $("whoBtn").hidden = !me; $("whoBtn").textContent = me ? me.name + " ▾" : "";
     // a name kept only on this device: point to the account, where the readings are kept for good
     var localOnly = !!(sb && me && !me.cloud);
@@ -963,7 +1010,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
       var waiting = outbox(user.id).map(fromRow);
       kids = ((res[2] && res[2].data) || []).map(function (c) { return { id: "c_" + c.child_id, cid: c.child_id, name: String(c.display_name || "ילדה").slice(0, 20) }; });
       abandon();
-      me = { id: "u_" + user.id, uid: user.id, name: String(name).slice(0, 20), cloud: true, code: String((res[0] && res[0].data && res[0].data.link_code) || "") };
+      me = { id: "u_" + user.id, uid: user.id, name: String(name).slice(0, 20), cloud: true, parent: !!(user.user_metadata && user.user_metadata.is_parent), code: String((res[0] && res[0].data && res[0].data.link_code) || "") };
       log = ((res[1] && res[1].data) || []).map(fromRow).reverse().concat(waiting);
       saveProfiles(); loadGlossPref(); flushOutbox(user.id);
       stars = bestStars(); attempt = null; verdict = null; showNote("");
@@ -981,15 +1028,16 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     $("cloudBox").hidden = !sb;
     if (!sb) { return; }
     $("cloudIn").hidden = !cloudUser; $("cloudForm").hidden = !!cloudUser;
-    $("cloudName").hidden = !newMode;
+    $("cloudName").hidden = !newMode; $("cloudParentWrap").hidden = !newMode;
     $("cloudGo").textContent = newMode ? "פתיחת חשבון" : "כניסה";
     $("cloudNew").textContent = newMode ? "יש לי כבר חשבון" : "אין לי חשבון עדיין";
     $("cloudPass").autocomplete = newMode ? "new-password" : "current-password";
     if (!cloudUser) { return; }
     var mine = me && me.cloud;
-    $("cloudMe").textContent = "להמשיך בתור " + (mine ? me.name : String(cloudUser.email || "").split("@")[0]);
+    $("cloudMe").textContent = isParent() ? "לפתוח את לוח הבקרה" : "להמשיך בתור " + (mine ? me.name : String(cloudUser.email || "").split("@")[0]);
+    $("parentWrap").hidden = !mine; $("parentToggle").checked = isParent();
     var code = $("cloudCode"); code.textContent = "";
-    if (mine && me.code) {
+    if (mine && me.code && !me.parent) {
       code.appendChild(document.createTextNode("הקוד של החשבון הזה, בשביל הורה שרוצה לקשר אותו: "));
       var b = document.createElement("bdi"); b.dir = "ltr"; b.textContent = me.code; code.appendChild(b);
     }
@@ -1008,7 +1056,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     var fail = function () { $("cloudGo").disabled = false; st.textContent = "לא הצלחתי להתחבר. בדקו את החיבור לאינטרנט."; };
     $("cloudGo").disabled = true; st.textContent = newMode ? "פותחים חשבון…" : "מתחברים…";
     if (newMode) {
-      sb.auth.signUp({ email: email, password: pass, options: { data: { display_name: name }, emailRedirectTo: location.origin + location.pathname } }).then(function (r) {
+      sb.auth.signUp({ email: email, password: pass, options: { data: { display_name: name, is_parent: $("cloudParent").checked }, emailRedirectTo: location.origin + location.pathname } }).then(function (r) {
         $("cloudGo").disabled = false; $("cloudPass").value = "";
         if (!r || r.error) { st.textContent = "לא הצלחתי לפתוח חשבון. אולי כבר יש חשבון עם האימייל הזה?"; return; }
         if (r.data && r.data.session && r.data.user) { $("cloudName").value = ""; return cloudEnter(r.data.user); }
@@ -1023,21 +1071,37 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
       return cloudEnter(r.data.user);
     }, fail);
   });
-  $("linkForm").addEventListener("submit", function (e) {
-    e.preventDefault();
-    var codeIn = $("linkCode").value.replace(/\s+/g, "").toUpperCase(), st = $("cloudStatus");
+  function linkChild(input, st) {
+    var codeIn = input.value.replace(/\s+/g, "").toUpperCase();
     if (!sb || !me || !me.cloud || !codeIn) { return; }
     st.textContent = "מקשרים…";
     sb.rpc("add_child_by_code", { p_code: codeIn }).then(function (r) {
       if (!r || r.error || !r.data) { st.textContent = "לא מצאתי חשבון עם הקוד הזה."; return; }
-      $("linkCode").value = "";
-      st.textContent = String(r.data).slice(0, 20) + " קושרה לחשבון הזה. הדוח שלה מופיע תחת \"להורים: דוח קריאה\".";
+      input.value = "";
+      st.textContent = String(r.data).slice(0, 20) + (isParent() ? " קושרה לחשבון הזה." : " קושרה לחשבון הזה. הדוח שלה מופיע תחת \"להורים: דוח קריאה\".");
       return sb.rpc("my_children").then(function (c) {
         kids = ((c && c.data) || []).map(function (x) { return { id: "c_" + x.child_id, cid: x.child_id, name: String(x.display_name || "ילדה").slice(0, 20) }; });
         drawCloud();
+        if (isParent()) { drawDash(); }
         if ($("reportBox").open) { repWho = null; drawReport(); }
       });
     }, function () { st.textContent = "לא הצלחתי לקשר. בדקו את החיבור לאינטרנט."; });
+  }
+  $("linkForm").addEventListener("submit", function (e) { e.preventDefault(); linkChild($("linkCode"), $("cloudStatus")); });
+  $("dashLink").addEventListener("submit", function (e) { e.preventDefault(); linkChild($("dashCode"), $("dashStatus")); });
+  // A parent account opens a dashboard of the children instead of the reading screen. The mark lives in
+  // the account's own details and grants nothing: a parent sees only the children linked by their code.
+  $("parentToggle").addEventListener("change", function () {
+    var box = this, on = box.checked, st = $("cloudStatus");
+    if (!sb || !cloudUser || !me || !me.cloud) { box.checked = !on; return; }
+    box.disabled = true; st.textContent = "שומר…";
+    sb.auth.updateUser({ data: { is_parent: on } }).then(function (r) {
+      box.disabled = false;
+      if (!r || r.error) { box.checked = !on; st.textContent = "לא הצלחתי לשמור. נסו שוב."; return; }
+      if (r.data && r.data.user) { cloudUser = r.data.user; }
+      me.parent = on; st.textContent = "";
+      showChooser(false); render();
+    }, function () { box.disabled = false; box.checked = !on; st.textContent = "לא הצלחתי לשמור. בדקו את החיבור לאינטרנט."; });
   });
   $("cloudMe").addEventListener("click", function () { if (sb && cloudUser && !listening) { cloudEnter(cloudUser); } });
   $("cloudOut").addEventListener("click", function () {
@@ -1066,8 +1130,8 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     return e;
   }
   function showChooser(on) {
-    $("chooser").hidden = !on; $("practice").hidden = on;
-    if (!on) { return; }
+    $("chooser").hidden = !on; applyMode();
+    if (!on) { if (isParent()) { drawDash(); } return; }
     drawCloud();
     var list = $("profileList"); list.textContent = "";
     profiles.forEach(function (p) {
@@ -1267,6 +1331,166 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
     var drow = el("div", "row"); drow.appendChild(del); box.appendChild(drow);
   }
   $("reportBox").addEventListener("toggle", function () { if (this.open) { repWho = kids.length ? kids[0].id : me ? me.id : null; drawReport(); } });
+
+  // ---------- parent dashboard ----------
+  // For an account marked as a parent: one card per linked child, and her full report on demand.
+  var dashDays = 7, dashSeq = 0, dashOpen = null, DAY = 86400000;
+  function isParent() { return !!(me && me.cloud && me.parent); }
+  function applyMode() {
+    var p = isParent(), choosing = !$("chooser").hidden;
+    $("dash").hidden = !p || choosing;
+    $("practice").hidden = p || choosing;
+    $("reportBox").hidden = p; $("parent").hidden = p; $("count").hidden = p;
+  }
+  function today0() { var n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime(); }
+  function periodFrom() { return dashDays ? today0() - (dashDays - 1) * DAY : 0; }
+  function periodLabel() { return dashDays === 1 ? "היום" : dashDays ? dashDays + " ימים" : "הכול"; }
+  function levelOf(rows) {        // the same estimate the reading screen uses, from this child's tries; 0 = not enough to tell
+    if (!bank) { return 0; }
+    var lv = 0;
+    bank.levels.forEach(function (L) {
+      var g = 0, n = 0, k = 0, rg = 0, rn = 0;
+      rows.forEach(function (r) { if (r.done && L.passages.indexOf(r.s) >= 0) { g += r.good; n += r.n; k++; } });
+      if (k >= 4 && n && g / n >= 0.85) { lv = Math.max(lv, Math.min(bank.levels.length, L.n + 1)); }
+      rows.slice(-12).forEach(function (r) { if (L.passages.indexOf(r.s) >= 0) { rg += r.good; rn += r.n; } });
+      if (rn) { lv = Math.max(lv, rg / rn >= 0.6 ? L.n : Math.max(1, L.n - 1)); }
+    });
+    return lv;
+  }
+  function trendEl(cur, prev, show) {
+    var t = el("span", "trend");
+    if (prev == null) { return null; }
+    t.textContent = (cur > prev ? "↑ " : cur < prev ? "↓ " : "") + "קודם: " + show(prev);
+    if (cur > prev) { t.classList.add("up"); } else if (cur < prev) { t.classList.add("down"); }
+    return t;
+  }
+  function tile(val, label, tr) {
+    var t = el("div", "tile"); t.appendChild(el("b", "", val)); t.appendChild(el("span", "", label));
+    if (tr) { t.appendChild(tr); }
+    return t;
+  }
+  function lastReadPill(rows) {
+    if (!rows.length) { return el("span", "pill warn", "עוד לא קראה"); }
+    var d = Math.round((today0() - new Date(new Date(rows[rows.length - 1].t).toDateString()).getTime()) / DAY);
+    if (d <= 0) { return el("span", "pill", "קראה היום"); }
+    if (d === 1) { return el("span", "pill", "קראה אתמול"); }
+    return el("span", "pill" + (d >= 3 ? " warn" : ""), "לא קראה " + d + " ימים");
+  }
+  function kidCard(k, all) {
+    var card = el("div", "kid"), top = el("div", "kidTop");
+    top.appendChild(el("h3", "", k.name));
+    if (!all) {
+      card.appendChild(top);
+      card.appendChild(el("p", "hintline", "לא הצלחתי לטעון את הנתונים של " + k.name + ". נסו לרענן."));
+      return card;
+    }
+    top.appendChild(lastReadPill(all)); card.appendChild(top);
+    var from = periodFrom(), rows = all.filter(function (r) { return r.t >= from; });
+    var prev = dashDays ? all.filter(function (r) { return r.t >= from - dashDays * DAY && r.t < from; }) : null;
+    var o = summarize(rows), po = prev ? summarize(prev) : null;
+    var days = {}; rows.forEach(function (r) { days[dayKey(r.t)] = 1; });
+    var nDays = Object.keys(days).length;
+    var tiles = el("div", "tiles");
+    tiles.appendChild(tile(fmt(o.ms), "זמן קריאה בקול", po ? trendEl(o.ms, po.ms, fmt) : null));
+    tiles.appendChild(tile(String(o.tries), "קטעים, " + o.done + " מהם עד הסוף", po ? trendEl(o.tries, po.tries, String) : null));
+    var acc = o.tried ? Math.round(100 * o.good / o.tried) : null, pacc = po && po.tried ? Math.round(100 * po.good / po.tried) : null;
+    tiles.appendChild(tile(acc == null ? "–" : acc + "%", "דיוק במילים", acc != null && pacc != null ? trendEl(acc, pacc, function (v) { return v + "%"; }) : null));
+    tiles.appendChild(tile(String(nDays) + (dashDays > 1 ? " מתוך " + dashDays : ""), "ימים עם קריאה"));
+    card.appendChild(tiles);
+
+    // the last 14 days, minutes read each day
+    var t0 = today0(), mins = [], max = 0;
+    for (var i = 13; i >= 0; i--) {
+      var a = t0 - i * DAY, ms = 0;
+      all.forEach(function (r) { if (r.t >= a && r.t < a + DAY) { ms += r.ms; } });
+      mins.push({ a: a, ms: ms }); max = Math.max(max, ms);
+    }
+    var bars = el("div", "bars"); bars.setAttribute("role", "img");
+    bars.setAttribute("aria-label", "זמן קריאה ב-14 הימים האחרונים");
+    mins.forEach(function (m) {
+      var b = el("i", m.ms ? "" : "zero");
+      if (m.ms) { b.style.height = Math.max(6, Math.round(100 * m.ms / max)) + "%"; }
+      b.title = dayLabel(m.a) + ": " + (m.ms ? fmt(m.ms) : "לא קראה");
+      bars.appendChild(b);
+    });
+    var chart = el("div"); chart.appendChild(bars);
+    var lab = el("div", "barsLabel"); lab.appendChild(el("span", "", "לפני שבועיים")); lab.appendChild(el("span", "", "היום"));
+    chart.appendChild(lab); card.appendChild(chart);
+
+    var lv = levelOf(all), meta = [];
+    if (lv) { meta.push("רמה משוערת: " + lv + " מתוך " + bank.levels.length); }
+    if (o.perfect) { meta.push(o.perfect + (o.perfect === 1 ? " קטע" : " קטעים") + " בלי טעויות"); }
+    if (meta.length) { card.appendChild(el("div", "kidMeta", meta.join(" · "))); }
+    if (all.length) {
+      var lastP = el("div", "kidMeta", "קטע אחרון: "), bd = el("bdi", "", all[all.length - 1].s.slice(0, 80) + (all[all.length - 1].s.length > 80 ? "…" : ""));
+      bd.dir = "ltr"; lastP.appendChild(bd); card.appendChild(lastP);
+    }
+    if (o.words.length) {
+      var chips = el("div", "chips"); chips.dir = "ltr";
+      o.words.slice(0, 6).forEach(function (x) {
+        var c = el("button", "chip", x.w + " "); c.appendChild(el("small", "", "×" + x.c));
+        c.addEventListener("click", function () { speak(x.w, WORD_RATE); });
+        chips.appendChild(c);
+      });
+      card.appendChild(el("div", "kidMeta", "מילים שהיו קשות:")); card.appendChild(chips);
+    }
+    var more = el("button", "btn small", dashOpen === k.id ? "הדוח המלא פתוח למטה" : "דוח מלא");
+    more.addEventListener("click", function () { dashOpen = k.id; showDetail(k, all); drawDashCards(); });
+    var mrow = el("div", "row"); mrow.appendChild(more); card.appendChild(mrow);
+    return card;
+  }
+  function showDetail(k, all) {
+    var d = $("dashDetail"), from = periodFrom(); d.textContent = "";
+    var head = el("div", "dashHead"), close = el("button", "btn small", "סגירה");
+    head.appendChild(el("h2", "", "דוח מלא: " + k.name + " (" + periodLabel() + ")"));
+    close.addEventListener("click", function () { dashOpen = null; d.textContent = ""; drawDashCards(); });
+    head.appendChild(close); d.appendChild(head);
+    repDays = dashDays;
+    fillReport(d, k, periodLabel(), all.filter(function (r) { return r.t >= from; }));
+    d.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+  var dashData = [];
+  function drawDashCards() {
+    var body = $("dashBody"); body.textContent = "";
+    var grid = el("div", "dashGrid"); body.appendChild(grid);
+    dashData.forEach(function (x) { grid.appendChild(kidCard(x.k, x.rows)); });
+  }
+  function drawDash() {
+    var seq = ++dashSeq, per = $("dashPeriod"), body = $("dashBody");
+    per.textContent = "";
+    [[1, "היום"], [7, "7 ימים"], [30, "30 ימים"], [0, "הכול"]].forEach(function (x) {
+      var b = el("button", "btn small" + (x[0] === dashDays ? " on" : ""), x[1]);
+      b.addEventListener("click", function () { dashDays = x[0]; drawDash(); });
+      per.appendChild(b);
+    });
+    per.hidden = !kids.length;
+    if (!kids.length) {
+      dashData = []; $("dashDetail").textContent = ""; body.textContent = "";
+      var e = el("div", "dashEmpty"), ol = el("ol");
+      e.appendChild(el("h3", "", "עוד לא קישרת אף ילדה"));
+      ["כל ילדה פותחת חשבון משלה במכשיר שלה, באתר הזה.",
+       "אצלה, לוחצים על השם שלה למעלה. במסך שנפתח מופיע קוד בן 10 תווים.",
+       "כאן למטה מקלידים את הקוד ולוחצים על \"קישור\"."].forEach(function (s) { ol.appendChild(el("li", "", s)); });
+      e.appendChild(ol); body.appendChild(e);
+      return;
+    }
+    body.textContent = ""; body.appendChild(el("p", "hintline", "טוען…"));
+    Promise.all(kids.map(function (k) {
+      return tryRows(k).then(function (rows) { return { k: k, rows: rows }; }, function () { return { k: k, rows: null }; });
+    })).then(function (list) {
+      if (seq !== dashSeq) { return; }
+      dashData = list; drawDashCards();
+      var open = list.filter(function (x) { return x.k.id === dashOpen && x.rows; })[0];
+      if (open) { showDetail(open.k, open.rows); } else { dashOpen = null; $("dashDetail").textContent = ""; }
+    });
+  }
+  $("dashRefresh").addEventListener("click", function () {
+    if (!sb || !isParent()) { return; }
+    sb.rpc("my_children").then(function (c) {
+      if (c && !c.error) { kids = (c.data || []).map(function (x) { return { id: "c_" + x.child_id, cid: x.child_id, name: String(x.display_name || "ילדה").slice(0, 20) }; }); }
+      drawDash();
+    }, drawDash);
+  });
 
   // ---------- parent: other passages, kept on this device ----------
   function parseEditor(text) {
