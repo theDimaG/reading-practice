@@ -366,7 +366,15 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
 (function () {
   "use strict";
   var LS_LOCAL = "reading-ipad-local", LS_GLOSS = "reading-ipad-show-hebrew", LS_IDX = "reading-ipad-index";
-  var PASSAGE_RATE = 0.7, WORD_RATE = 0.4;     // a single word: well under half the device voice's normal pace
+  // Apple's speech engine (every browser on iPhone/iPad, and Safari on a Mac) halves any rate
+  // below 1 and then barely slows down further, so a word there needs a much lower number to
+  // come out as slowly as it does elsewhere. 0.1 is the slowest the standard allows.
+  var UA = navigator.userAgent || "";
+  var APPLE_SPEECH = /iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1) ||
+    (/Safari/.test(UA) && !/Chrome|Chromium|CriOS|Edg|OPR|Firefox|FxiOS|Android/.test(UA));
+  var PASSAGE_RATE = APPLE_SPEECH ? 0.55 : 0.7;
+  var WORD_RATE = APPLE_SPEECH ? 0.1 : 0.4;     // a single word: as slow as the device voice goes
+  var LETTER_RATE = APPLE_SPEECH ? 0.3 : 0.6;
   var $ = function (id) { return document.getElementById(id); };
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   var hasSynth = !!(window.speechSynthesis && window.SpeechSynthesisUtterance);
@@ -748,7 +756,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
         var u = new SpeechSynthesisUtterance(said), v = usVoice();
         u.lang = "en-US"; if (v) { u.voice = v; }
         u.rate = rate; u.onend = done; u.onerror = done;
-        setTimeout(done, 3000 + text.length * 400);
+        setTimeout(done, Math.min(90000, 4000 + text.length * 120 / rate));   // in case the voice never reports the end
         window.speechSynthesis.speak(u);
       } catch (err) { done(); }
     });
@@ -979,7 +987,7 @@ th { color: var(--muted); font-weight: 500; font-size: .88rem; }
   });
   $("drillSpell").addEventListener("click", function () {
     if (!drill || listening || drillBusy) { return; }
-    var parts = drill.word.replace(/[^A-Za-z]/g, "").split("").map(function (ch) { return { t: ch.toUpperCase(), r: 0.6, gap: 250 }; });
+    var parts = drill.word.replace(/[^A-Za-z]/g, "").split("").map(function (ch) { return { t: ch.toUpperCase(), r: LETTER_RATE, gap: 250 }; });
     parts.push({ t: drill.word, r: WORD_RATE, gap: 0 });
     if (parts.length > 1) { parts[parts.length - 2].gap = 600; }
     sayChain(parts);
